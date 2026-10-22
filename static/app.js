@@ -107,7 +107,7 @@ async function load(){
     ['חודש','שולם ועד בית',...(ev?['רכב חשמלי']:[]),'מספר קבלה'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');
     (a.data.monthlyPayments||[]).forEach((v,i)=>{
       const r=document.createElement('tr');const month=text('th',monthsHE[i],r);month.scope='row';const amount=text('td',money(v),r);amount.className=Number(v)>0?'paid':'unpaid';
-      if(ev){const value=(ev.months||[])[i];const cell=text('td',value===null||value===undefined?'—':money(value),r);if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';text('small',unpaid?'לתשלום':'שולם',cell)}const note=(ev.monthNotes||[])[i];if(note)text('small',note,cell)}
+      if(ev){const value=(ev.months||[])[i];const cell=text('td',value===null||value===undefined?'—':money(value),r);if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';cell.classList.add('ev-payment')}const note=(ev.monthNotes||[])[i];if(note){cell.classList.add('ev-payment');text('span',note,cell,'ev-consumption')}}
       const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';body.appendChild(r)
     });
     table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);evDetails(a.data.electricVehicle,box);$('apartments').appendChild(box)
