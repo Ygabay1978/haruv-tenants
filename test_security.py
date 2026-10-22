@@ -10,7 +10,7 @@ class IsolationTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.old=server.DB;server.DB=str(Path(self.temp.name)/'db');server.ORIGIN='https://portal.test'
         self.c=server.connect()
         with self.c:
-            for table in ['resident_viewers','notices','administrators','presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
+            for table in ['committee_account','notice_notifications','resident_viewers','notices','administrators','presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
         self.c.executemany('INSERT INTO apartments VALUES(?,?)',[(1,'{"paid":100,"owners":["Owner One"],"tenants":["Tenant One"],"access":{"gym":"Gym One","pal":"PAL One"}}'),(2,'{"paid":98765,"owners":["Private Other Owner"],"access":{"pal":"Private Other PAL"}}')])
         self.c.executemany('INSERT INTO email_memberships VALUES(?,?,?,1)',[('owner@example.com',1,'owner'),('tenant@example.com',1,'tenant'),('other@example.com',2,'owner')]);self.c.commit()
     def tearDown(self):self.c.close();server.DB=self.old;self.temp.cleanup();self.env_patch.stop()

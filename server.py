@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent
 DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 import storage
-import tenant_summary, portal_rules
+import tenant_summary, portal_rules, notice_mail
 
 def connect():
     return storage.connect(DB)
@@ -73,7 +73,7 @@ def provider_reason(error):
             return 'provider_ip_restriction'
         if 'sender' in message: return 'provider_sender_rejected'
         if 'activat' in message or 'suspend' in message: return 'provider_account_restricted'
-        if code in ('unauthorized','permission_denied','invalid_parameter','missing_parameter','not_enough_credits','account_under_validation','too_many_requests'):
+        if code in ('unauthorized','permission_denied','invalid_parameter','missing_parameter','not_enough_credits','account_under_validation','too_many_requests','duplicate_parameter'):
             return code
     except Exception:
         pass
@@ -98,11 +98,35 @@ def send_email(address, code):
         delivery_event('email_delivery_failed', reason='provider_connection_failed')
         raise RuntimeError('Email delivery failed') from None
 
+def send_notice_emails(notice,addresses,key):
+    import html
+    if not email_configured():raise notice_mail.Rejected()
+    title=re.sub(r'\s+',' ',notice['title']).strip()
+    link=ORIGIN.rstrip('/')+'/'
+    text=f'הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־{title}.\n\nלצפייה בהודעה, היכנסו לפורטל: {link}\nהכניסה באמצעות קוד אישי למייל הרשום במערכת.\n\nועד בניין חרוב · שתולים 57 תל אביב'
+    content=f'<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;background:#f6f1e9;color:#38281f;padding:28px"><h2>בניין חרוב</h2><p>הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־<strong>{html.escape(title)}</strong>.</p><p><a href="{html.escape(link,quote=True)}" style="display:inline-block;background:#866141;color:white;padding:14px 24px;text-decoration:none;border-radius:5px">כניסה לפורטל וצפייה בהודעה</a></p><p>הכניסה באמצעות קוד אישי למייל הרשום במערכת.</p><small>שתולים 57 תל אביב · ועד הבית</small></body></html>'
+    payload={'sender':{'name':'ועד בניין חרוב','email':email(os.environ['EMAIL_FROM'])},'subject':'הודעה חדשה מוועד הבניין: '+title,'textContent':text,'htmlContent':content,'headers':{'idempotencyKey':key},'messageVersions':[{'to':[{'email':email(a)}]} for a in addresses]}
+    if len(addresses)>1000:raise notice_mail.Rejected()
+    req=Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})
+    try:
+        with urlopen(req,timeout=12) as response:
+            if response.status!=201:raise notice_mail.Uncertain()
+        delivery_event('notice_email_provider_accepted',201)
+    except HTTPError as error:
+        reason=provider_reason(error)
+        delivery_event('notice_email_failed',error.code,reason)
+        if reason=='duplicate_parameter':return
+        if 400<=error.code<500:raise notice_mail.Rejected() from None
+        raise notice_mail.Uncertain() from None
+    except (URLError,TimeoutError,OSError):
+        delivery_event('notice_email_failed',reason='provider_connection_failed')
+        raise notice_mail.Uncertain() from None
+
 def is_admin(c,address):
-    return c.execute('SELECT 1 FROM administrators WHERE email=? AND active=1',(address,)).fetchone() is not None
+    return c.execute('SELECT 1 FROM administrators a JOIN committee_account o ON o.email=a.email AND o.id=1 WHERE a.email=? AND a.active=1',(address,)).fetchone() is not None
 
 def can_preview(c,address):
-    return is_admin(c,address) or c.execute('SELECT 1 FROM resident_viewers WHERE email=? AND active=1',(address,)).fetchone() is not None
+    return is_admin(c,address) or c.execute('SELECT 1 FROM resident_viewers v JOIN committee_account o ON o.email=v.email AND o.id=1 WHERE v.email=? AND v.active=1',(address,)).fetchone() is not None
 
 def resident_notices(c,address,apt):
     return [dict(r) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
@@ -233,24 +257,35 @@ def app(env, start):
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/admin/notices' and method=='GET':
-                return respond({'notices':[dict(r) for r in c.execute('SELECT * FROM notices ORDER BY updated DESC,id').fetchall()]})
+                return respond({'notices':[dict(r,notification=notice_mail.latest(c,r['id'])) for r in c.execute('SELECT * FROM notices ORDER BY updated DESC,id').fetchall()]})
+            if path=='/api/admin/notifications/retry' and method=='POST':
+                ident=body.get('id');version=body.get('version')
+                if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
+                if not limit(c,'notice-retry:'+p,30,3600):return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
+                return respond({'notification':notice_mail.deliver(c,ident,version,send_notice_emails)})
             if path=='/api/admin/notices' and method=='POST':
                 if not limit(c,'admin-change:'+p,200,3600):return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
                 try:values=portal_rules.notice_input(body,c)
                 except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
-                ident=body.get('id');stamp=int(time.time())
+                ident=body.get('id');stamp=int(time.time());changed=True;version=1
                 if ident:
                     if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'מזהה לא תקין'},'400 Bad Request')
-                    version=body.get('version')
-                    if type(version) is not int or version<1:return respond({'error':'גרסה לא תקינה'},'400 Bad Request')
+                    requested=body.get('version')
+                    if type(requested) is not int or requested<1:return respond({'error':'גרסה לא תקינה'},'400 Bad Request')
                     with c.transaction(lock='notice:'+ident):
-                        old=c.execute('SELECT version FROM notices WHERE id=?',(ident,)).fetchone()
-                        if not old or old['version']!=version:return respond({'error':'ההודעה השתנתה. רעננו לפני שמירה'},'409 Conflict')
-                        c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=version+1 WHERE id=?',(*values,stamp,ident))
+                        old=c.execute('SELECT * FROM notices WHERE id=?',(ident,)).fetchone()
+                        if not old or old['version']!=requested:return respond({'error':'ההודעה השתנתה. רעננו לפני שמירה'},'409 Conflict')
+                        changed=tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values)
+                        version=requested+int(changed)
+                        c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=? WHERE id=?',(*values,stamp,version,ident))
+                        if changed and values[-1]:notice_mail.queue(c,ident,version)
                 else:
                     ident=secrets.token_hex(16)
-                    c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp));c.commit()
-                return respond({'ok':True,'id':ident})
+                    with c.transaction(lock='notice:'+ident):
+                        c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp))
+                        if values[-1]:notice_mail.queue(c,ident,version)
+                notification=notice_mail.deliver(c,ident,version,send_notice_emails) if changed and values[-1] else {'state':'not_published' if not values[-1] else 'unchanged','recipients':0}
+                return respond({'ok':True,'id':ident,'notification':notification})
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
