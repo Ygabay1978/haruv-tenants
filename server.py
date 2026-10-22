@@ -1,5 +1,5 @@
 """Private tenant portal. Run behind HTTPS with gunicorn server:app."""
-import os, json, sqlite3, secrets, hashlib, time, re, base64
+import os, json, sqlite3, secrets, hashlib, time, re, hmac
 from http.cookies import SimpleCookie
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
@@ -22,8 +22,20 @@ def phone(value):
     if not re.fullmatch(r'\+9725\d{8}', s): raise ValueError('מספר נייד ישראלי אינו תקין')
     return s
 
+def email(value):
+    value = str(value or '').strip().lower()
+    if len(value)>254 or not re.fullmatch(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,63}", value):
+        raise ValueError('כתובת המייל אינה תקינה')
+    return value
+
 def allowed(c, p):
-    return c.execute('SELECT 1 FROM memberships WHERE phone=? AND active=1 LIMIT 1', (p,)).fetchone() is not None
+    return c.execute('SELECT 1 FROM email_memberships WHERE email=? AND active=1 LIMIT 1', (p,)).fetchone() is not None
+
+def email_configured():
+    return bool(os.environ.get('BREVO_API_KEY') and os.environ.get('EMAIL_FROM') and len(os.environ.get('OTP_SECRET',''))>=32)
+
+def otp_digest(address, nonce, code):
+    return hmac.new(os.environ['OTP_SECRET'].encode(), (address+'\n'+nonce+'\n'+code).encode(), hashlib.sha256).hexdigest()
 
 def limit(c, key, maximum, seconds):
     now = int(time.time())
@@ -34,15 +46,14 @@ def limit(c, key, maximum, seconds):
         c.execute('DELETE FROM attempts WHERE at<?',(now-86400,))
     return True
 
-def twilio(action, fields):
-    sid, token, service = [os.environ.get(k,'') for k in ('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_VERIFY_SERVICE_SID')]
-    if not (re.fullmatch(r'AC[0-9a-fA-F]{32}',sid) and token and re.fullmatch(r'VA[0-9a-fA-F]{32}',service)):
-        raise RuntimeError('SMS אינו מחובר עדיין')
-    req = Request(f'https://verify.twilio.com/v2/Services/{service}/{action}',data=urlencode(fields).encode(),headers={'Authorization':'Basic '+base64.b64encode(f'{sid}:{token}'.encode()).decode()})
-    try:
-        with urlopen(req,timeout=12) as response: return json.load(response)
-    except HTTPError:
-        return {'status':'failed'}
+def send_email(address, code):
+    payload = {'sender':{'name':'בניין חרוב','email':email(os.environ['EMAIL_FROM'])},
+               'to':[{'email':address}], 'subject':'קוד כניסה לפורטל בניין חרוב',
+               'textContent':f'קוד הכניסה שלך: {code}\nהקוד תקף ל-10 דקות ולשימוש אחד. אין להעביר אותו לאחרים.\nאם לא ביקשת קוד כניסה, אפשר להתעלם מההודעה.'}
+    req = Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),
+                  headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})
+    with urlopen(req,timeout=12) as response:
+        if response.status != 201: raise RuntimeError('Email delivery failed')
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -61,10 +72,10 @@ def app(env, start):
         try:
             db = connect()
             ready = db.execute('SELECT 1 FROM apartments LIMIT 1').fetchone() is not None
-            sms = all(os.environ.get(k) for k in ('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_VERIFY_SERVICE_SID'))
-            return respond({'database':'connected','data_ready':ready,'sms_configured':sms,'version':'neon-v1'})
+            grants = db.execute('SELECT 1 FROM email_memberships WHERE active=1 LIMIT 1').fetchone() is not None
+            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'email-v1'})
         except Exception:
-            return respond({'database':'unavailable','data_ready':False,'sms_configured':False,'version':'neon-v1'}, '503 Service Unavailable')
+            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'email-v1'}, '503 Service Unavailable')
         finally:
             if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
@@ -81,41 +92,52 @@ def app(env, start):
     try:
         c = connect()
         if path in ('/api/send-code','/api/verify-code') and method=='POST':
-            try: p = phone(body.get('phone'))
-            except ValueError: return respond({'error':'יש להזין מספר נייד תקין'},'400 Bad Request')
+            try: p = email(body.get('email'))
+            except ValueError: return respond({'error':'יש להזין כתובת מייל תקינה'},'400 Bad Request')
+            if not email_configured(): raise RuntimeError('Email is not configured')
             if path == '/api/send-code':
-                if not limit(c,'send-global',100,3600) or not limit(c,'send:'+p,1,60) or not limit(c,'hour:'+p,5,3600):
+                if not limit(c,'email-day',200,86400) or not limit(c,'email-send-global',50,3600) or not limit(c,'email-send:'+p,1,60) or not limit(c,'email-hour:'+p,5,3600):
                     return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
-                # Never send an SMS to a phone outside the allowlist.
                 if allowed(c,p):
-                    result = twilio('Verifications',{'To':p,'Channel':'sms'})
-                    if result.get('status') != 'pending': raise RuntimeError()
-                return respond({'message':'אם המספר מורשה, נשלח אליו קוד כניסה'})
-            if not limit(c,'verify-global',1000,600) or not limit(c,'verify:'+p,5,600):
+                    code = f'{secrets.randbelow(1000000):06d}'
+                    nonce = secrets.token_urlsafe(24)
+                    with c.transaction(lock='email-otp:'+p):
+                        c.execute('DELETE FROM email_challenges WHERE expires<?',(int(time.time()),))
+                        c.execute('INSERT INTO email_challenges VALUES(?,?,?,?,0) ON CONFLICT(email) DO UPDATE SET digest=excluded.digest,nonce=excluded.nonce,expires=excluded.expires,ready=0',
+                                  (p,otp_digest(p,nonce,code),nonce,int(time.time())+600))
+                    try:
+                        send_email(p,code)
+                        c.execute('UPDATE email_challenges SET ready=1 WHERE email=? AND nonce=?',(p,nonce));c.commit()
+                    except Exception:
+                        c.execute('DELETE FROM email_challenges WHERE email=? AND nonce=?',(p,nonce));c.commit()
+                        # Same public response prevents account enumeration on delivery errors.
+                return respond({'message':'אם המייל מורשה, נשלח אליו קוד כניסה. בדקו גם בתיקיית הספאם.'})
+            if not limit(c,'email-verify-global',1000,600) or not limit(c,'email-verify:'+p,5,600):
                 return respond({'error':'יותר מדי ניסיונות; יש להמתין'},'429 Too Many Requests')
             code = str(body.get('code',''))
-            if not re.fullmatch(r'\d{4,10}',code) or not allowed(c,p):
-                return respond({'error':'הקוד או פרטי הגישה אינם תקינים'},'401 Unauthorized')
-            result = twilio('VerificationCheck',{'To':p,'Code':code})
-            if result.get('status') != 'approved' or not allowed(c,p):
-                return respond({'error':'הקוד או פרטי הגישה אינם תקינים'},'401 Unauthorized')
             token = secrets.token_urlsafe(32)
-            c.execute('DELETE FROM sessions WHERE expires<?',(int(time.time()),))
-            c.execute('INSERT INTO sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),p,int(time.time())+3600)); c.commit()
+            with c.transaction(lock='email-otp:'+p):
+                challenge = c.execute('SELECT * FROM email_challenges WHERE email=? AND ready=1 AND expires>?',(p,int(time.time()))).fetchone()
+                valid = bool(re.fullmatch(r'[0-9]{6}',code) and challenge and allowed(c,p) and hmac.compare_digest(challenge['digest'],otp_digest(p,challenge['nonce'],code)))
+                if valid:
+                    c.execute('DELETE FROM email_challenges WHERE email=?',(p,))
+                    c.execute('DELETE FROM email_sessions WHERE expires<?',(int(time.time()),))
+                    c.execute('INSERT INTO email_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),p,int(time.time())+3600))
+            if not valid: return respond({'error':'הקוד או פרטי הגישה אינם תקינים'},'401 Unauthorized')
             return respond({'ok':True},extra=[('Set-Cookie',f'__Host-session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600')])
         cookies = SimpleCookie()
         try: cookies.load(env.get('HTTP_COOKIE',''))
         except Exception: return respond({'error':'יש להתחבר'},'401 Unauthorized')
         token = cookies.get('__Host-session')
         digest = hashlib.sha256((token.value if token else '').encode()).hexdigest()
-        session = c.execute('SELECT phone FROM sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
-        if not session or not allowed(c,session['phone']): return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
-        p = session['phone']
+        session = c.execute('SELECT email FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
+        if not session or not allowed(c,session['email']): return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
+        p = session['email']
         if path == '/api/logout' and method=='POST':
-            c.execute('DELETE FROM sessions WHERE digest=?',(digest,)); c.commit()
+            c.execute('DELETE FROM email_sessions WHERE digest=?',(digest,)); c.commit()
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
         if path == '/api/apartments' and method=='GET':
-            rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN memberships m ON a.apt=m.apt WHERE m.phone=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
+            rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
             return respond({'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':json.loads(r['payload'])} for r in rows]})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()

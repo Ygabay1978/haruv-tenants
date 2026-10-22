@@ -1,4 +1,4 @@
-const $=id=>document.getElementById(id);let mobile='';
+const $=id=>document.getElementById(id);let address='';
 const money=x=>new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',maximumFractionDigits:2}).format(x||0);
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});let data=await r.json();if(!r.ok){const error=new Error(data.error||'אירעה שגיאה');error.status=r.status;throw error}return data}
 function message(text,error=false){$('message').textContent=text;$('message').className=error?'error':''}
@@ -6,9 +6,9 @@ function text(tag,value,parent){const e=document.createElement(tag);e.textConten
 function clear(){ $('portal').hidden=true;$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
 async function load(){const result=await api('/api/apartments');$('apartments').replaceChildren();for(const a of result.apartments){const box=document.createElement('article');box.className='apartment';text('h2','דירה '+a.apt,box);text('p',a.roles.map(r=>r==='owner'?'בעל/ת דירה':'שוכר/ת').join(' · '),box);const metrics=document.createElement('div');metrics.className='metrics';for(const [label,key] of [['תשלום חודשי','monthly'],['שולם השנה','paid'],['יתרה שנתית לתשלום','due']]){const m=document.createElement('div');text('span',label,m);text('strong',money(a.data[key]),m);metrics.appendChild(m)}box.appendChild(metrics);const table=document.createElement('table');const head=document.createElement('thead');const row=document.createElement('tr');['חודש','שולם'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');(a.data.monthlyPayments||[]).forEach((v,i)=>{const r=document.createElement('tr');text('td',['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'][i],r);text('td',money(v),r);body.appendChild(r)});table.appendChild(body);box.appendChild(table);$('apartments').appendChild(box)}$('summary').src='/api/summary';$('login').hidden=true;$('portal').hidden=false;message('')}
 async function busy(form,action){const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);try{await action()}catch(e){message(e.message,true)}finally{buttons.forEach(b=>b.disabled=false)}}
-$('phone-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{mobile=$('phone').value;const r=await api('/api/send-code',{phone:mobile});message(r.message);$('phone-form').hidden=true;$('code-form').hidden=false;$('code').focus()})};
-$('code-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{await api('/api/verify-code',{phone:mobile,code:$('code').value});await load()})};
-$('back').onclick=()=>{$('code-form').hidden=true;$('phone-form').hidden=false;$('code').value='';message('')};
+$('email-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{address=$('email').value;const r=await api('/api/send-code',{email:address});message(r.message);$('email-form').hidden=true;$('code-form').hidden=false;$('code').focus()})};
+$('code-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{await api('/api/verify-code',{email:address,code:$('code').value});await load()})};
+$('back').onclick=()=>{$('code-form').hidden=true;$('email-form').hidden=false;$('code').value='';message('')};
 $('logout').onclick=async()=>{try{await api('/api/logout',{})}finally{clear();$('back').click()}};
 load().catch(()=>clear());
 setInterval(async()=>{if(!$('portal').hidden){try{await load()}catch(e){clear();message('יש להתחבר מחדש',true)}}},60000);

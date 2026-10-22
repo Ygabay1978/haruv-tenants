@@ -2,8 +2,12 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary')
+TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges')
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS email_memberships(email TEXT NOT NULL, apt INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','tenant')), active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(email,apt,role));
+CREATE TABLE IF NOT EXISTS email_sessions(digest TEXT PRIMARY KEY, email TEXT NOT NULL, expires BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS email_challenges(email TEXT PRIMARY KEY, digest TEXT NOT NULL, nonce TEXT NOT NULL, expires BIGINT NOT NULL, ready INTEGER NOT NULL DEFAULT 0);
+
 CREATE TABLE IF NOT EXISTS apartments(apt INTEGER PRIMARY KEY, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS memberships(phone TEXT NOT NULL, apt INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','tenant')), active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(phone,apt,role));
 CREATE TABLE IF NOT EXISTS sessions(digest TEXT PRIMARY KEY, phone TEXT NOT NULL, expires BIGINT NOT NULL);
