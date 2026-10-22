@@ -79,7 +79,7 @@ function evDetails(ev,box){
 function help(contacts){
  for(const [container,section] of [['help-contacts','help-section'],['login-help-contacts','login-support']]){
   const parent=$(container);parent.replaceChildren();
-  for(const c of contacts||[]){const card=document.createElement('div');card.className='help-contact';text('strong',c.name,card);text('p',c.topics,card);const phone=text('a',c.phone,card);phone.href='tel:'+c.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';parent.appendChild(card)}$(section).hidden=!parent.children.length;
+  for(const c of contacts||[]){const card=document.createElement('div');card.className='help-contact';text('strong',c.name,card);text('p',c.topics,card);const phone=text('a',c.phone.replace(/^(052)([0-9]{7})$/,'$1-$2'),card);phone.href='tel:'+c.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';parent.appendChild(card)}$(section).hidden=!parent.children.length;
  }
 }
 async function load(){
