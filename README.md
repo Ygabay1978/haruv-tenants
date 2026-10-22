@@ -8,7 +8,7 @@ Read-only resident portal for building Haruv, Shtulim 57. Public repository cont
 - Six-digit email OTP via Brevo HTTPS API, 10-minute expiry, HMAC-protected stored codes, atomic single-use verification and five attempts per ten minutes. Old SMS sessions are never accepted.
 - Every protected request checks current membership on the server. Removing a tenant blocks existing sessions too.
 - Opaque one-hour sessions stored as hashes, Secure/HttpOnly/SameSite cookies, exact-origin POST checks, bounded request bodies, shared transactional rate limits and a global email cap.
-- Apartment responses whitelist financial fields only, without committee notes, the resident directory or other apartments. The original read-only TENANTS summary is stored privately and returned only after authentication.
+- Apartment responses whitelist financial fields only, plus owner/tenant names and recorded gym/PAL access for the authorized apartment only, without contact emails/phones, committee notes or other apartments. The original read-only TENANTS summary is stored privately and returned only after authentication.
 - Residents have no write endpoints. Updates and membership changes are privileged server operations, not resident functions. The existing committee dashboard stays separate.
 - Browser rechecks its data each minute. Authenticated responses use no-store.
 
@@ -45,3 +45,9 @@ python -m unittest -v test_security.py test_storage.py
 Tests mock the email provider and cover per-apartment isolation, owner/tenant access, unknown-email rejection, revocation, CSRF checks, OTP outcome handling, secure cookies, throttling, logout and read-only API behavior. Live email delivery, deployment, restored backups and the final email allowlist still require validation before distributing a link.
 
 For PostgreSQL integration testing against a disposable database only, set `TEST_DATABASE_URL` and run the same suite. Never point integration tests at production: each test clears the private portal tables.
+
+## Resident page and imagery
+
+The interface uses walnut, ivory and muted brass tones. Recorded gym and PAL permissions are view-only; neither button opens a door nor modifies grants. Missing entries are labelled as unrecorded, not inferred. Apartment payloads include owners, tenants and access strings imported from the corresponding directory row.
+
+The selected neighborhood photo is intentionally visible on the public sign-in page as well as the authenticated apartment page. It is stored in the private database presentation table, never alongside resident data in the public repository. The `/building-photo` endpoint returns only a validated JPEG/PNG/WebP; it cannot return apartment data. Privately import the prepared metadata SQL for existing installations. Future imports retain names/access and use the photo embedded in the supplied tenant HTML. No resident upload or edit endpoint exists.

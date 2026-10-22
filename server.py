@@ -1,5 +1,5 @@
 """Private tenant portal. Run behind HTTPS with gunicorn server:app."""
-import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging
+import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging, base64
 from http.cookies import SimpleCookie
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
@@ -46,6 +46,18 @@ def limit(c, key, maximum, seconds):
         c.execute('DELETE FROM attempts WHERE at<?',(now-86400,))
     return True
 
+def photo_bytes(photo):
+    if not isinstance(photo,str) or len(photo)>4000000:
+        raise ValueError('Invalid image')
+    match = re.fullmatch(r'data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)', photo)
+    if not match: raise ValueError('Invalid image')
+    raw = base64.b64decode(match[2],validate=True)
+    if not ((match[1]=='image/jpeg' and raw.startswith(b'\xff\xd8\xff')) or
+            (match[1]=='image/png' and raw.startswith(b'\x89PNG\r\n\x1a\n')) or
+            (match[1]=='image/webp' and raw.startswith(b'RIFF') and raw[8:12]==b'WEBP')):
+        raise ValueError('Invalid image')
+    return raw, match[1]
+
 def delivery_event(event, http_status=None, reason=None):
     # Fixed categories only: never log recipient, OTP, API key or raw provider text.
     logging.getLogger('portal.delivery').warning(json.dumps({
@@ -88,7 +100,7 @@ def send_email(address, code):
 def app(env, start):
     status, headers = '200 OK', []
     def respond(body, code='200 OK', kind='application/json; charset=utf-8', extra=()):
-        raw = body.encode() if isinstance(body,str) else json.dumps(body,ensure_ascii=False).encode()
+        raw = body if isinstance(body,bytes) else body.encode() if isinstance(body,str) else json.dumps(body,ensure_ascii=False).encode()
         start(code,[('Content-Type',kind),('Content-Length',str(len(raw))),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),('X-Frame-Options','SAMEORIGIN'),('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"),*extra])
         return [raw]
     path, method = env.get('PATH_INFO','/'), env.get('REQUEST_METHOD','GET')
@@ -96,6 +108,18 @@ def app(env, start):
         name = {'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[path]
         kind = {'/':'text/html','/app.js':'application/javascript','/style.css':'text/css'}[path]
         return respond((ROOT/'static'/name).read_text(),kind=kind+'; charset=utf-8')
+    if path == '/building-photo' and method=='GET':
+        db = None
+        try:
+            db = connect()
+            row = db.execute('SELECT photo FROM presentation WHERE id=1').fetchone()
+            if not row: return respond({'error':'לא נמצאה תמונה'},'404 Not Found')
+            raw, kind = photo_bytes(row['photo'])
+            return respond(raw,kind=kind)
+        except Exception:
+            return respond({'error':'התמונה אינה זמינה'},'404 Not Found')
+        finally:
+            if db: db.close()
     if path == '/health': return respond({'ok': True})
     if path == '/api/status' and method == 'GET':
         db = None
@@ -103,9 +127,9 @@ def app(env, start):
             db = connect()
             ready = db.execute('SELECT 1 FROM apartments LIMIT 1').fetchone() is not None
             grants = db.execute('SELECT 1 FROM email_memberships WHERE active=1 LIMIT 1').fetchone() is not None
-            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'email-v2'})
+            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'residence-v3'})
         except Exception:
-            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'email-v2'}, '503 Service Unavailable')
+            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'residence-v3'}, '503 Service Unavailable')
         finally:
             if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
@@ -173,7 +197,10 @@ def app(env, start):
             return respond({'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':json.loads(r['payload'])} for r in rows]})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()
-            return respond(row['html'] if row else '<p dir="rtl">טרם הועלה סיכום</p>',kind='text/html; charset=utf-8')
+            html = row['html'] if row else '<p dir="rtl">טרם הועלה סיכום</p>'
+            theme = '<style>'+ (ROOT/'static'/'summary.css').read_text()+'</style>'
+            html = html.replace('</head>',theme+'</head>',1)
+            return respond(html,kind='text/html; charset=utf-8')
         return respond({'error':'לא נמצא'},'404 Not Found')
     except Exception:
         # No codes, phones, tokens or provider response bodies in logs.

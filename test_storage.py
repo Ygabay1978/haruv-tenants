@@ -10,14 +10,14 @@ class PersistenceTests(unittest.TestCase):
         self.env=patch.dict(os.environ,{'DATABASE_URL':os.environ.get('TEST_DATABASE_URL',''),'PORTAL_TEST_DATABASE':'1','BREVO_API_KEY':'test','EMAIL_FROM':'board@example.com','OTP_SECRET':'x'*40});self.env.start()
         c=server.connect()
         with c:
-            for table in ['email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']:c.execute('DELETE FROM '+table)
+            for table in ['presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']:c.execute('DELETE FROM '+table)
         c.close()
     def tearDown(self):self.env.stop();server.DB=self.old;self.t.cleanup()
     def test_import_survives_reconnection_and_revokes_departed_contact(self):
         folder=Path(self.t.name)
         full=folder/'full.html';summary=folder/'tenants.html'
         data={'residents':[{'apt':1,'monthly':100,'annual':1200,'paid':200,'due':1000,'monthlyPayments':[100,100]}],
-              'directory':[{'apt':1,'owner1Email':'owner@example.com','tenant1Email':'tenant@example.com'}]}
+              'directory':[{'apt':1,'owner1Email':'owner@example.com','tenant1Email':'tenant@example.com','owner1Name':'Example Owner','owner2Name':'Second Owner','tenant1Name':'Example Tenant','owner1Phone':'0501111111','gymAccess':'Gym Person','palAccess':'PAL Person'}]}
         def save():full.write_text('<script id="embedded-data" type="application/json">'+json.dumps(data)+'</script>')
         summary.write_text('<script id="embedded-summary" type="application/json">{}</script>')
         save();self.assertEqual(import_data(full,summary)['email_apartment_roles'],2)
@@ -25,7 +25,11 @@ class PersistenceTests(unittest.TestCase):
         c.execute('UPDATE email_memberships SET active=0 WHERE email=?',('owner@example.com',));c.commit();c.close()
         data['directory'][0]['tenant1Email']=None;data['residents'][0]['paid']=300;save();import_data(full,summary)
         c=server.connect();self.assertFalse(server.allowed(c,'tenant@example.com'));self.assertFalse(server.allowed(c,'owner@example.com'))
-        self.assertEqual(json.loads(c.execute('SELECT payload FROM apartments WHERE apt=1').fetchone()['payload'])['paid'],300);c.close()
+        self.assertEqual(json.loads(c.execute('SELECT payload FROM apartments WHERE apt=1').fetchone()['payload'])['paid'],300)
+        payload=json.loads(c.execute('SELECT payload FROM apartments WHERE apt=1').fetchone()['payload'])
+        self.assertEqual(payload['owners'],['Example Owner','Second Owner']);self.assertEqual(payload['tenants'],['Example Tenant'])
+        self.assertEqual(payload['access'],{'gym':'Gym Person','pal':'PAL Person'})
+        self.assertNotIn('owner1Phone',payload);self.assertNotIn('owner1Email',payload);c.close()
     def test_rate_limit_persists_across_connections(self):
         c=server.connect();self.assertTrue(server.limit(c,'test',1,60));c.close()
         c=server.connect();self.assertFalse(server.limit(c,'test',1,60));c.close()

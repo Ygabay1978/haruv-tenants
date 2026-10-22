@@ -10,8 +10,8 @@ class IsolationTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.old=server.DB;server.DB=str(Path(self.temp.name)/'db');server.ORIGIN='https://portal.test'
         self.c=server.connect()
         with self.c:
-            for table in ['email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
-        self.c.executemany('INSERT INTO apartments VALUES(?,?)',[(1,'{"paid":100}'),(2,'{"paid":98765}')])
+            for table in ['presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
+        self.c.executemany('INSERT INTO apartments VALUES(?,?)',[(1,'{"paid":100,"owners":["Owner One"],"tenants":["Tenant One"],"access":{"gym":"Gym One","pal":"PAL One"}}'),(2,'{"paid":98765,"owners":["Private Other Owner"],"access":{"pal":"Private Other PAL"}}')])
         self.c.executemany('INSERT INTO email_memberships VALUES(?,?,?,1)',[('owner@example.com',1,'owner'),('tenant@example.com',1,'tenant'),('other@example.com',2,'owner')]);self.c.commit()
     def tearDown(self):self.c.close();server.DB=self.old;self.temp.cleanup();self.env_patch.stop()
     def request(self,path,body=None,cookie='',origin='https://portal.test'):
@@ -53,12 +53,19 @@ class IsolationTests(unittest.TestCase):
         for secret in ['private-api-key','owner@example.com','123456']: self.assertNotIn(secret,output)
         self.assertTrue(r['status'].startswith('200'))
         self.assertIsNone(self.c.execute('SELECT 1 FROM email_challenges').fetchone())
+    def test_public_photo_excludes_private_apartment_data(self):
+        self.c.execute('INSERT INTO presentation VALUES(1,?)',('data:image/jpeg;base64,/9j/2Q==',));self.c.commit()
+        r=self.request('/building-photo');self.assertTrue(r['status'].startswith('200'))
+        self.assertEqual(r['headers']['Content-Type'],'image/jpeg');self.assertEqual(r['body'],b'\xff\xd8\xff\xd9')
+        self.assertNotIn(b'Owner One',self.request('/')['body'])
+    def test_photo_rejects_html_svg(self):
+        with self.assertRaises(ValueError): server.photo_bytes('data:image/svg+xml;base64,PHN2Zz4=')
     def test_no_auth_no_data(self):
         for path in ['/api/apartments','/api/summary']:
             r=self.request(path);self.assertTrue(r['status'].startswith('401'));self.assertNotIn(b'98765',r['body'])
     def test_owner_and_tenant_only_their_apartment(self):
         for p in ['owner@example.com','tenant@example.com']:
-            r=self.request('/api/apartments',cookie=self.session(p));d=json.loads(r['body']);self.assertEqual([a['apt'] for a in d['apartments']],[1]);self.assertNotIn(b'98765',r['body'])
+            r=self.request('/api/apartments',cookie=self.session(p));d=json.loads(r['body']);self.assertEqual([a['apt'] for a in d['apartments']],[1]);self.assertNotIn(b'98765',r['body']);self.assertIn(b'Owner One',r['body']);self.assertNotIn(b'Private Other Owner',r['body']);self.assertIn(b'PAL One',r['body']);self.assertNotIn(b'Private Other PAL',r['body'])
     def test_revocation_immediate_for_existing_session(self):
         cookie=self.session('tenant@example.com');self.c.execute("UPDATE email_memberships SET active=0 WHERE role='tenant'");self.c.commit()
         self.assertTrue(self.request('/api/apartments',cookie=cookie)['status'].startswith('401'))

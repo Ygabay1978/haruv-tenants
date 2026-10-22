@@ -23,7 +23,15 @@ def import_data(full, tenants):
         rows[apt]['monthlyPayments'] = r.get('monthlyPayments',[])
     for entry in data['directory']:
         apt = int(entry['apt'])
+        if apt in rows:
+            for role, prefixes in [('owners',['owner1','owner2']),('tenants',['tenant1','tenant2','tenant3'])]:
+                rows[apt][role] = list(dict.fromkeys(str(entry[prefix+'Name']).strip() for prefix in prefixes
+                    if entry.get(prefix+'Name') and str(entry[prefix+'Name']).strip() not in ('-','אין')))
+    for entry in data['directory']:
+        apt = int(entry['apt'])
         if apt not in rows: continue
+        rows[apt]['access'] = {key:str(entry.get(field) or '').strip() if str(entry.get(field) or '').strip() not in ('-','אין') else ''
+                               for key,field in [('gym','gymAccess'),('pal','palAccess')]}
         for field in ['owner1Email','owner2Email','tenant1Email','tenant2Email','tenant3Email']:
             raw = entry.get(field)
             if raw is None or str(raw).strip() in ('','-'): continue
@@ -33,9 +41,14 @@ def import_data(full, tenants):
             grants.add((p,apt,'owner' if field.startswith('owner') else 'tenant'))
     if not rows or not grants: raise ValueError('No valid apartments or memberships; import cancelled')
     if not os.environ.get('DATABASE_URL'): Path(server.DB).parent.mkdir(parents=True,exist_ok=True)
+    try: photo = embedded(tenants,'embedded-photo')
+    except ValueError: photo = None
+    if photo is not None: server.photo_bytes(photo)
     c = server.connect()
     try:
         with c:
+            if photo is not None:
+                c.execute('INSERT INTO presentation VALUES(1,?) ON CONFLICT(id) DO UPDATE SET photo=excluded.photo',(photo,))
             c.execute('DELETE FROM apartments')
             c.executemany('INSERT INTO apartments VALUES(?,?)',[(apt,json.dumps(v,ensure_ascii=False)) for apt,v in rows.items()])
             # Preserve explicit deactivations for retained contacts; remove departed contacts.
