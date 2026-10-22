@@ -133,6 +133,10 @@ body{background:var(--bg)!important;color:var(--text);font-family:Arial,sans-ser
 .masthead::after{background:#bc9d6c;height:1px}.kpi-label,.chart-card h4,.elevation-card h4{font-weight:800;font-size:14px}.kpi-icon{font-weight:800}.kpi-label{color:var(--text)}.kpi.c-teal .kpi-icon{background:#24754716;color:#247547}.kpi.c-coral .kpi-icon{background:#b2342b13;color:#b2342b}.kpi::before{display:none}.kpi-sub{font-size:11px}.chart-tooltip{background:#fffdf9;color:#38281f;border:1px solid #d7c6ad}.kpi-grid{grid-template-rows:none;grid-auto-flow:row}.kpi-value{font-size:21px}.fixed-legend .amt{color:#b2342b}.building-mark{box-shadow:none}.elevation-card{background:#eee4d6!important}.chart-card{background:var(--surface-2)}
 @media(max-width:600px){.shell{padding:18px 10px 30px}.overview-grid{grid-template-columns:1fr}.combined-fixed-grid{grid-template-columns:1fr}.chart-wrap{height:230px}.kpi-label{font-size:13px}.kpi-value{font-size:19px}.masthead h1{font-size:21px}.fixed-legend-row{font-size:12px}.chart-card h4{line-height:1.6}}
 @media(max-width:350px){.kpi-grid{grid-template-columns:1fr}.kpi-value{font-size:22px}}
+</style><style id="financial-columns">
+.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:none;grid-auto-flow:row dense}
+.kpi.c-teal{grid-column:1}.kpi.c-coral{grid-column:2}
+@media(max-width:350px){.kpi-grid{grid-template-columns:1fr}.kpi.c-teal,.kpi.c-coral{grid-column:1}}
 </style></head>
 <body>
 <div class="shell">
