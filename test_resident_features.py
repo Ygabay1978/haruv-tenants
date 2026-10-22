@@ -83,6 +83,13 @@ class ResidentFeatureTests(unittest.TestCase):
         saved=self.request('/api/admin/notices',body,cookie=cookie);self.assertTrue(saved['status'].startswith('200'))
         path='/api/attachments/'+attachment['id']
         self.assertTrue(self.request(path,cookie=cookie)['status'].startswith('200'))
+        download=self.request(path+'/download',cookie=cookie)
+        self.assertTrue(download['status'].startswith('200'))
+        self.assertTrue(download['headers']['Content-Disposition'].startswith('attachment;'))
+        self.assertEqual(download['body'],b'%PDF-1.4\nexample')
+        self.assertTrue(self.request(path+'/download',cookie=self.session('tenant@example.com'))['status'].startswith('404'))
+        self.assertTrue(self.request(path+'/download',cookie=self.session('other@example.com'))['status'].startswith('404'))
+        self.assertTrue(self.request(path+'/download')['status'].startswith('401'))
         self.assertTrue(self.request(path,cookie=self.session('tenant@example.com'))['status'].startswith('404'))
         self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('404'))
         notice=dict(self.c.execute('SELECT * FROM notices WHERE id=?',(json.loads(saved['body'])['id'],)).fetchone());notice['audience']='all';notice['attachments']=[attachment['id']]

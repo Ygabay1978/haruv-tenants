@@ -252,7 +252,8 @@ def app(env, start):
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
         if (path.startswith('/api/attachments/') or path.startswith('/api/admin/attachments/')) and method=='GET':
             if path.startswith('/api/admin/') and not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
-            value=path.rsplit('/',1)[-1]
+            download=path.endswith('/download')
+            value=path.rsplit('/',2)[-2] if download else path.rsplit('/',1)[-1]
             if not re.fullmatch(r'[0-9a-f]{32}',value):return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
             file=c.execute('SELECT * FROM notice_attachments WHERE id=?',(value,)).fetchone()
             permitted=bool(file and can_preview(c,p))
@@ -260,7 +261,7 @@ def app(env, start):
                 own=c.execute('SELECT DISTINCT apt FROM email_memberships WHERE email=? AND active=1',(p,)).fetchall()
                 permitted=any(any(n['id']==file['notice_id'] for n in resident_notices(c,p,a['apt'])) for a in own)
             if not permitted:return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
-            disposition='inline' if file['mime'].startswith('image/') or file['mime']=='application/pdf' else 'attachment'
+            disposition='inline' if not download and (file['mime'].startswith('image/') or file['mime']=='application/pdf') else 'attachment'
             return respond(base64.b64decode(file['data']),kind=file['mime'],extra=[('Content-Disposition',disposition+"; filename*=UTF-8''"+quote(file['filename'])),('Content-Security-Policy',"default-src 'none'; sandbox")])
         if path in ('/api/viewer/context','/api/preview'):
             if not can_preview(c,p):return respond({'error':'צפייה זו זמינה לוועד בלבד'},'403 Forbidden')
