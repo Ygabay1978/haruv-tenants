@@ -9,3 +9,8 @@ body.login-mode{background:#f7f5f0}body.login-mode>header,body.login-mode>footer
 @media(min-width:1500px){.login-content{padding-left:15%;padding-right:15%}.login-content h1{font-size:48px}}
 @media(max-width:1100px){.login-content{padding-left:9%;padding-right:9%}.login-content h1{font-size:36px}}
 @media(max-width:700px){.login-shell{display:flex;flex-direction:column}.login-content{min-height:660px;padding:110px 26px 40px;order:0}.login-content h1{font-size:30px;white-space:normal}.login-content h2{font-size:21px}.login-brand{top:30px;right:26px}.login-photo{min-height:360px;order:1}.login-photo:after{inset:20px}.login-mode #message:not(:empty){position:static;max-width:none;margin:12px 20px}.login-content .access-note{font-size:13px}}
+
+/* Clear headings throughout the apartment details. */
+#portal h1,#portal h2,#portal h3,#portal h4,#portal summary{font-weight:700}
+#portal .unit-details dt,#portal .people h3,#portal .metric>span{font-weight:700;color:var(--ink);font-size:14px}
+#portal .access-copy strong{font-weight:700;font-size:16px}
