@@ -10,14 +10,15 @@ class PersistenceTests(unittest.TestCase):
         self.env=patch.dict(os.environ,{'DATABASE_URL':os.environ.get('TEST_DATABASE_URL',''),'PORTAL_TEST_DATABASE':'1','BREVO_API_KEY':'test','EMAIL_FROM':'board@example.com','OTP_SECRET':'x'*40});self.env.start()
         c=server.connect()
         with c:
-            for table in ['presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']:c.execute('DELETE FROM '+table)
+            for table in ['notices','administrators','presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']:c.execute('DELETE FROM '+table)
         c.close()
     def tearDown(self):self.env.stop();server.DB=self.old;self.t.cleanup()
     def test_import_survives_reconnection_and_revokes_departed_contact(self):
         folder=Path(self.t.name)
         full=folder/'full.html';summary=folder/'tenants.html'
         data={'residents':[{'apt':1,'monthly':100,'annual':1200,'paid':200,'due':1000,'monthlyPayments':[100,100]}],
-              'directory':[{'apt':1,'owner1Email':'owner@example.com','tenant1Email':'tenant@example.com','owner1Name':'Example Owner','owner2Name':'Second Owner','tenant1Name':'Example Tenant','owner1Phone':'0501111111','gymAccess':'Gym Person','palAccess':'PAL Person'}]}
+              'evTable':{'residents':[{'apt':1,'name':'Example Driver','months':[50,None],'monthNotes':['Comment: 80 kWh','Installed charger'],'monthUnpaid':[True,False]}]},
+              'directory':[{'apt':1,'owner1Email':'owner@example.com','tenant1Email':'tenant@example.com','owner1Name':'Example Owner','owner2Name':'Second Owner','tenant1Name':'Example Tenant','owner1Phone':'0501111111','gymAccess':'Gym Person','palAccess':'PAL Person','floor':7,'rooms':4,'parking':'78 (-3)','storage':'12 (-1)'}]}
         def save():full.write_text('<script id="embedded-data" type="application/json">'+json.dumps(data)+'</script>')
         summary.write_text('<script id="embedded-summary" type="application/json">{}</script>')
         save();self.assertEqual(import_data(full,summary)['email_apartment_roles'],2)
@@ -29,6 +30,9 @@ class PersistenceTests(unittest.TestCase):
         payload=json.loads(c.execute('SELECT payload FROM apartments WHERE apt=1').fetchone()['payload'])
         self.assertEqual(payload['owners'],['Example Owner','Second Owner']);self.assertEqual(payload['tenants'],['Example Tenant'])
         self.assertEqual(payload['access'],{'gym':'Gym Person','pal':'PAL Person'})
+        self.assertEqual(payload['floor'],7);self.assertEqual(payload['parking'],'78 (-3)')
+        self.assertEqual(payload['electricVehicle']['monthNotes'],['80 kWh','Installed charger'])
+        self.assertEqual(payload['ownerContacts'][0]['name'],'Example Owner')
         self.assertNotIn('owner1Phone',payload);self.assertNotIn('owner1Email',payload);c.close()
     def test_rate_limit_persists_across_connections(self):
         c=server.connect();self.assertTrue(server.limit(c,'test',1,60));c.close()

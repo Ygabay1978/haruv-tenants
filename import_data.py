@@ -2,6 +2,7 @@
 import argparse, json, re, os
 from pathlib import Path
 import server
+import tenant_summary
 
 def embedded(path, element):
     value = re.search(r'<script\b[^>]*\bid=["\']'+re.escape(element)+r'["\'][^>]*>(.*?)</script>',Path(path).read_text(),re.S)
@@ -15,15 +16,34 @@ def import_data(full, tenants):
     html = Path(tenants).read_text()
     # Store only the explicit read-only tenant file, never the full committee HTML.
     if 'embedded-data' in html or 'fileInput' in html: raise ValueError('Expected read-only tenant dashboard')
+    html = tenant_summary.render(html)
     rows, grants, rejected = {}, set(), 0
     for r in data['residents']:
         apt = int(r['apt'])
         if apt in rows: raise ValueError('Duplicate apartment')
         rows[apt] = {k:r.get(k,0) for k in ['monthly','annual','paid','due']}
         rows[apt]['monthlyPayments'] = r.get('monthlyPayments',[])
+        rows[apt]['year'] = int(data.get('year',2026))
+        rows[apt]['support'] = data.get('support',[])
+    for ev in (data.get('evTable') or {}).get('residents',[]):
+        apt=int(ev['apt'])
+        if apt not in rows: continue
+        def clean_note(value):
+            if not value:return None
+            text=str(value)
+            return text.split('Comment:',1)[-1].strip() if 'Comment:' in text else text.strip()
+        rows[apt]['electricVehicle'] = {
+            'holder':str(ev.get('name') or ''), 'months':ev.get('months',[]),
+            'monthNotes':[clean_note(n) for n in ev.get('monthNotes',[])],
+            'monthUnpaid':ev.get('monthUnpaid',[]),
+            'sourceNotes':[str(ev[k]) for k in ('novemberText','decemberText') if ev.get(k)]}
+
     for entry in data['directory']:
         apt = int(entry['apt'])
         if apt in rows:
+            for key in ('floor','rooms','parking','storage'): rows[apt][key]=entry.get(key)
+            for key,prefixes in [('ownerContacts',['owner1','owner2']),('tenantContacts',['tenant1','tenant2','tenant3'])]:
+                rows[apt][key]=[{'name':str(entry[prefix+'Name']).strip(),'phone':str(entry.get(prefix+'Phone') or '').strip(),'email':str(entry.get(prefix+'Email') or '').strip()} for prefix in prefixes if entry.get(prefix+'Name') and str(entry[prefix+'Name']).strip() not in ('-','אין')]
             for role, prefixes in [('owners',['owner1','owner2']),('tenants',['tenant1','tenant2','tenant3'])]:
                 rows[apt][role] = list(dict.fromkeys(str(entry[prefix+'Name']).strip() for prefix in prefixes
                     if entry.get(prefix+'Name') and str(entry[prefix+'Name']).strip() not in ('-','אין')))

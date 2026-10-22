@@ -10,6 +10,7 @@ ROOT = Path(__file__).parent
 DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 import storage
+import tenant_summary, portal_rules
 
 def connect():
     return storage.connect(DB)
@@ -97,6 +98,12 @@ def send_email(address, code):
         delivery_event('email_delivery_failed', reason='provider_connection_failed')
         raise RuntimeError('Email delivery failed') from None
 
+def is_admin(c,address):
+    return c.execute('SELECT 1 FROM administrators WHERE email=? AND active=1',(address,)).fetchone() is not None
+
+def resident_notices(c,address,apt):
+    return [dict(r) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+
 def app(env, start):
     status, headers = '200 OK', []
     def respond(body, code='200 OK', kind='application/json; charset=utf-8', extra=()):
@@ -104,9 +111,9 @@ def app(env, start):
         start(code,[('Content-Type',kind),('Content-Length',str(len(raw))),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),('X-Frame-Options','SAMEORIGIN'),('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"),*extra])
         return [raw]
     path, method = env.get('PATH_INFO','/'), env.get('REQUEST_METHOD','GET')
-    if method == 'GET' and path in ('/','/app.js','/style.css'):
-        name = {'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[path]
-        kind = {'/':'text/html','/app.js':'application/javascript','/style.css':'text/css'}[path]
+    if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css'):
+        name = {'/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css'}[path]
+        kind = {'/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css'}[path]
         return respond((ROOT/'static'/name).read_text(),kind=kind+'; charset=utf-8')
     if path == '/building-photo' and method=='GET':
         db = None
@@ -127,9 +134,9 @@ def app(env, start):
             db = connect()
             ready = db.execute('SELECT 1 FROM apartments LIMIT 1').fetchone() is not None
             grants = db.execute('SELECT 1 FROM email_memberships WHERE active=1 LIMIT 1').fetchone() is not None
-            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'residence-v3'})
+            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'residence-v4'})
         except Exception:
-            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'residence-v3'}, '503 Service Unavailable')
+            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'residence-v4'}, '503 Service Unavailable')
         finally:
             if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
@@ -138,7 +145,7 @@ def app(env, start):
         return respond({'error':'בקשה לא מורשית'},'403 Forbidden')
     try:
         n = int(env.get('CONTENT_LENGTH') or 0)
-        if n < 0 or n > 2048: raise ValueError()
+        if n < 0 or n > 20000: raise ValueError()
         body = json.loads(env['wsgi.input'].read(n) or b'{}') if method=='POST' else {}
         if not isinstance(body,dict): raise ValueError()
     except (ValueError,TypeError): return respond({'error':'בקשה לא תקינה'},'400 Bad Request')
@@ -192,14 +199,37 @@ def app(env, start):
         if path == '/api/logout' and method=='POST':
             c.execute('DELETE FROM email_sessions WHERE digest=?',(digest,)); c.commit()
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
+        if path.startswith('/api/admin/'):
+            if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/context' and method=='GET':
+                rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
+                return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
+            if path=='/api/admin/notices' and method=='GET':
+                return respond({'notices':[dict(r) for r in c.execute('SELECT * FROM notices ORDER BY updated DESC,id').fetchall()]})
+            if path=='/api/admin/notices' and method=='POST':
+                if not limit(c,'admin-change:'+p,200,3600):return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
+                try:values=portal_rules.notice_input(body,c)
+                except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
+                ident=body.get('id');stamp=int(time.time())
+                if ident:
+                    if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'מזהה לא תקין'},'400 Bad Request')
+                    version=body.get('version')
+                    if type(version) is not int or version<1:return respond({'error':'גרסה לא תקינה'},'400 Bad Request')
+                    with c.transaction(lock='notice:'+ident):
+                        old=c.execute('SELECT version FROM notices WHERE id=?',(ident,)).fetchone()
+                        if not old or old['version']!=version:return respond({'error':'ההודעה השתנתה. רעננו לפני שמירה'},'409 Conflict')
+                        c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=version+1 WHERE id=?',(*values,stamp,ident))
+                else:
+                    ident=secrets.token_hex(16)
+                    c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp));c.commit()
+                return respond({'ok':True,'id':ident})
+            return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
-            return respond({'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':json.loads(r['payload'])} for r in rows]})
+            return respond({'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload']),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()
-            html = row['html'] if row else '<p dir="rtl">טרם הועלה סיכום</p>'
-            theme = '<style>'+ (ROOT/'static'/'summary.css').read_text()+'</style>'
-            html = html.replace('</head>',theme+'</head>',1)
+            html = tenant_summary.render(row['html']) if row else '<p dir="rtl">טרם הועלה סיכום</p>'
             return respond(html,kind='text/html; charset=utf-8')
         return respond({'error':'לא נמצא'},'404 Not Found')
     except Exception:

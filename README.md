@@ -51,3 +51,11 @@ For PostgreSQL integration testing against a disposable database only, set `TEST
 The interface uses walnut, ivory and muted brass tones. Recorded gym and PAL permissions are view-only; neither button opens a door nor modifies grants. Missing entries are labelled as unrecorded, not inferred. Apartment payloads include owners, tenants and access strings imported from the corresponding directory row.
 
 The selected neighborhood photo is intentionally visible on the public sign-in page as well as the authenticated apartment page. It is stored in the private database presentation table, never alongside resident data in the public repository. The `/building-photo` endpoint returns only a validated JPEG/PNG/WebP; it cannot return apartment data. Privately import the prepared metadata SQL for existing installations. Future imports retain names/access and use the photo embedded in the supplied tenant HTML. No resident upload or edit endpoint exists.
+
+## Committee notes and messages
+
+The committee dashboard opens `/admin` on the portal. Access requires an ordinary email OTP session, a currently active apartment membership and a currently active row in `portal.administrators`. No administrator email or credential is embedded in public code. The private setup SQL grants the owner's requested administrative email. Removing that row immediately blocks admin operations.
+
+Notes and messages can target one apartment or all apartments, then owners, tenants or both. Every resident response filters recipients on the server against current roles for that exact apartment. Messages appear only after authentication. No notification emails/SMS are sent. Editors can update or unpublish messages; version checks prevent overwriting concurrent edits. Resident financial data and membership grants remain read-only in this editor.
+
+The resident summary is rebuilt from explicit fields, excluding bank balances and their hidden JSON. Due warnings use monthly arrears through the current Jerusalem calendar month, cap at the outstanding annual amount, and exclude future months. Over two monthly fees shows a payment warning; over three shows a legal-collection warning phrased as a possible next step. Payment amounts use red for zero/unpaid and green for paid. EV records, unit details and contact cards are scoped to authorized apartments.
