@@ -1,9 +1,9 @@
-const $=id=>document.getElementById(id);let address='';
+const $=id=>document.getElementById(id);let address='',previewSelection=null,viewerContextLoaded=false;
 const money=x=>new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0);
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});let data=await r.json();if(!r.ok){const error=new Error(data.error||'אירעה שגיאה');error.status=r.status;throw error}return data}
 function message(text,error=false){$('message').textContent=text;$('message').className=error?'error':''}
 function text(tag,value,parent){const e=document.createElement(tag);e.textContent=value;parent.appendChild(e);return e}
-function clear(){document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
+function clear(){previewSelection=null;viewerContextLoaded=false;$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
 function people(data,box){
   if(!Array.isArray(data.owners)&&!Array.isArray(data.tenants)) return;
   const group=document.createElement('div');group.className='people';
@@ -83,8 +83,11 @@ function help(contacts){
  }
 }
 async function load(){
-  const result=await api('/api/apartments');if(new URLSearchParams(location.search).get('admin')==='1'){const apt=new URLSearchParams(location.search).get('apt');location.replace('/admin'+(/^[0-9]{1,3}$/.test(apt||'')?'?apt='+apt:'')+(['note','message'].includes(new URLSearchParams(location.search).get('kind'))?(/^[0-9]{1,3}$/.test(apt||'')?'&':'?')+'kind='+new URLSearchParams(location.search).get('kind'):''));return}$('apartments').replaceChildren();
+  const result=previewSelection?await api('/api/preview',previewSelection):await api('/api/apartments');if(new URLSearchParams(location.search).get('admin')==='1'){const apt=new URLSearchParams(location.search).get('apt');location.replace('/admin'+(/^[0-9]{1,3}$/.test(apt||'')?'?apt='+apt:'')+(['note','message'].includes(new URLSearchParams(location.search).get('kind'))?(/^[0-9]{1,3}$/.test(apt||'')?'&':'?')+'kind='+new URLSearchParams(location.search).get('kind'):''));return}$('apartments').replaceChildren();
   help(result.apartments[0]?.data.support||[]);
+  $('viewer-controls').hidden=!result.canPreview;
+  if(result.canPreview&&!viewerContextLoaded){const context=await api('/api/viewer/context');const select=$('viewer-apt');select.replaceChildren();for(const a of context.apartments){const option=text('option','דירה '+a.apt+' · '+[...a.owners,...a.tenants].join(' / '),select);option.value=a.apt}viewerContextLoaded=true;const own=result.apartments[0];if(own)select.value=own.apt}
+  $('viewer-status').textContent=result.preview?'תצוגה מקדימה בלבד · דירה '+result.preview.apt+' · '+(result.preview.role==='owner'?'בעל/ת דירה':'שוכר/ת'):'';
   for(const a of result.apartments){
     const box=document.createElement('article');box.className='apartment';
     const top=document.createElement('div');top.className='apartment-top';
@@ -110,6 +113,8 @@ async function load(){
   document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;message('')
 }
 async function busy(form,action){const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);try{await action()}catch(e){message(e.message,true)}finally{buttons.forEach(b=>b.disabled=false)}}
+$('viewer-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{previewSelection={apt:Number($('viewer-apt').value),role:$('viewer-role').value};await load()})};
+$('viewer-back').onclick=()=>{previewSelection=null;load().catch(e=>message(e.message,true))};
 $('email-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{address=$('email').value;const r=await api('/api/send-code',{email:address});message(r.message);$('email-form').hidden=true;$('code-form').hidden=false;$('code').focus()})};
 $('code-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{await api('/api/verify-code',{email:address,code:$('code').value});await load()})};
 $('back').onclick=()=>{$('code-form').hidden=true;$('email-form').hidden=false;$('code').value='';message('')};

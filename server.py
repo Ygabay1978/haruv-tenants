@@ -101,6 +101,9 @@ def send_email(address, code):
 def is_admin(c,address):
     return c.execute('SELECT 1 FROM administrators WHERE email=? AND active=1',(address,)).fetchone() is not None
 
+def can_preview(c,address):
+    return is_admin(c,address) or c.execute('SELECT 1 FROM resident_viewers WHERE email=? AND active=1',(address,)).fetchone() is not None
+
 def resident_notices(c,address,apt):
     return [dict(r) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
@@ -211,6 +214,19 @@ def app(env, start):
         if path == '/api/logout' and method=='POST':
             c.execute('DELETE FROM email_sessions WHERE digest=?',(digest,)); c.commit()
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
+        if path in ('/api/viewer/context','/api/preview'):
+            if not can_preview(c,p):return respond({'error':'צפייה זו זמינה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/viewer/context' and method=='GET':
+                rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
+                return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
+            if path=='/api/preview' and method=='POST':
+                apt=body.get('apt');role=body.get('role')
+                if type(apt) is not int or role not in ('owner','tenant'):return respond({'error':'יש לבחור דירה וסוג דייר'},'400 Bad Request')
+                row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
+                if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
+                notices=[dict(n) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role)).fetchall()]
+                return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.resident_payload(row['payload']),'notices':notices}]})
+            return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
             if path=='/api/admin/context' and method=='GET':
@@ -238,7 +254,7 @@ def app(env, start):
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
-            return respond({'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload']),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
+            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload']),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()
             html = tenant_summary.render(row['html']) if row else '<p dir="rtl">טרם הועלה סיכום</p>'

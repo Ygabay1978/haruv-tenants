@@ -18,6 +18,26 @@ class ResidentFeatureTests(unittest.TestCase):
         self.assertTrue(result['status'].startswith('200'))
         self.assertEqual(json.loads(result['body']),{'contacts':[{'name':'Committee Contact','phone':'0500000000','topics':'Maintenance'}]})
         self.assertNotIn(b'private@example.com',result['body']);self.assertNotIn(b'hidden@example.com',result['body'])
+    def test_preview_requires_explicit_viewer_and_remains_read_only(self):
+        cookie=self.session('owner@example.com')
+        self.assertTrue(self.request('/api/viewer/context',cookie=cookie)['status'].startswith('403'))
+        self.assertTrue(self.request('/api/preview',{'apt':2,'role':'owner'},cookie=cookie)['status'].startswith('403'))
+        self.c.execute('INSERT INTO resident_viewers VALUES(?,1)',('owner@example.com',));self.c.commit()
+        context=json.loads(self.request('/api/viewer/context',cookie=cookie)['body']);self.assertEqual(len(context['apartments']),2)
+        preview=self.request('/api/preview',{'apt':2,'role':'owner'},cookie=cookie)
+        self.assertIn(b'Private Other Owner',preview['body'])
+        ordinary=json.loads(self.request('/api/apartments',cookie=cookie)['body']);self.assertEqual([a['apt'] for a in ordinary['apartments']],[1])
+        self.assertTrue(self.request('/api/admin/context',cookie=cookie)['status'].startswith('403'))
+        self.assertTrue(self.request('/api/preview',{'apt':2,'role':'invalid'},cookie=cookie)['status'].startswith('400'))
+        self.assertTrue(self.request('/api/preview',{'apt':999,'role':'owner'},cookie=cookie)['status'].startswith('404'))
+        self.c.execute('UPDATE resident_viewers SET active=0');self.c.commit()
+        self.assertTrue(self.request('/api/preview',{'apt':2,'role':'owner'},cookie=cookie)['status'].startswith('403'))
+    def test_preview_filters_notices_by_apartment_and_selected_role(self):
+        self.make_admin();self.save(apt=1,audience='tenant',body='Tenant specific');self.save(apt=1,audience='owner',body='Owner specific');self.save(apt=2,body='Other apartment')
+        owner=self.request('/api/preview',{'apt':1,'role':'owner'},cookie=self.session('owner@example.com'))
+        tenant=self.request('/api/preview',{'apt':1,'role':'tenant'},cookie=self.session('owner@example.com'))
+        self.assertIn(b'Owner specific',owner['body']);self.assertNotIn(b'Tenant specific',owner['body']);self.assertNotIn(b'Other apartment',owner['body'])
+        self.assertIn(b'Tenant specific',tenant['body']);self.assertNotIn(b'Owner specific',tenant['body'])
     def make_admin(self):
         self.c.execute('INSERT INTO administrators VALUES(?,1)',('owner@example.com',));self.c.commit()
     def save(self,**kw):
