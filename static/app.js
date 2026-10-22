@@ -77,8 +77,10 @@ function evDetails(ev,box){
   for(const note of ev.sourceNotes||[])text('small',note,section);box.appendChild(section);
 }
 function help(contacts){
- const parent=$('help-contacts');parent.replaceChildren();
- for(const c of contacts||[]){const card=document.createElement('div');card.className='help-contact';text('strong',c.name,card);text('p',c.topics,card);const phone=text('a',c.phone,card);phone.href='tel:'+c.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';parent.appendChild(card)}$('help-section').hidden=!parent.children.length;
+ for(const [container,section] of [['help-contacts','help-section'],['login-help-contacts','login-support']]){
+  const parent=$(container);parent.replaceChildren();
+  for(const c of contacts||[]){const card=document.createElement('div');card.className='help-contact';text('strong',c.name,card);text('p',c.topics,card);const phone=text('a',c.phone,card);phone.href='tel:'+c.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';parent.appendChild(card)}$(section).hidden=!parent.children.length;
+ }
 }
 async function load(){
   const result=await api('/api/apartments');if(new URLSearchParams(location.search).get('admin')==='1'){const apt=new URLSearchParams(location.search).get('apt');location.replace('/admin'+(/^[0-9]{1,3}$/.test(apt||'')?'?apt='+apt:'')+(['note','message'].includes(new URLSearchParams(location.search).get('kind'))?(/^[0-9]{1,3}$/.test(apt||'')?'&':'?')+'kind='+new URLSearchParams(location.search).get('kind'):''));return}$('apartments').replaceChildren();
@@ -112,6 +114,7 @@ $('email-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{address=
 $('code-form').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{await api('/api/verify-code',{email:address,code:$('code').value});await load()})};
 $('back').onclick=()=>{$('code-form').hidden=true;$('email-form').hidden=false;$('code').value='';message('')};
 $('logout').onclick=async()=>{try{await api('/api/logout',{})}finally{clear();$('back').click()}};
+api('/api/support').then(r=>help(r.contacts)).catch(()=>{});
 load().catch(()=>clear());
 setInterval(async()=>{if(!$('portal').hidden){try{await load()}catch(e){clear();message('יש להתחבר מחדש',true)}}},60000);
 

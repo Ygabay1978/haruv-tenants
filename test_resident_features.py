@@ -11,6 +11,13 @@ class ResidentFeatureTests(unittest.TestCase):
         security.IsolationTests.setUp(self)
         with self.c:
             for table in ('notices','administrators'):self.c.execute('DELETE FROM '+table)
+    def test_public_help_exposes_only_designated_contact_fields(self):
+        payload={'ownerContacts':[{'name':'Private Owner','email':'private@example.com'}], 'support':[{'name':'Committee Contact','phone':'0500000000','topics':'Maintenance','email':'hidden@example.com'}]}
+        self.c.execute('UPDATE apartments SET payload=? WHERE apt=1',(json.dumps(payload),));self.c.commit()
+        result=self.request('/api/support')
+        self.assertTrue(result['status'].startswith('200'))
+        self.assertEqual(json.loads(result['body']),{'contacts':[{'name':'Committee Contact','phone':'0500000000','topics':'Maintenance'}]})
+        self.assertNotIn(b'private@example.com',result['body']);self.assertNotIn(b'hidden@example.com',result['body'])
     def make_admin(self):
         self.c.execute('INSERT INTO administrators VALUES(?,1)',('owner@example.com',));self.c.commit()
     def save(self,**kw):

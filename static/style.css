@@ -14,3 +14,19 @@ body.login-mode{background:#f7f5f0}body.login-mode>header,body.login-mode>footer
 #portal h1,#portal h2,#portal h3,#portal h4,#portal summary{font-weight:700}
 #portal .unit-details dt,#portal .people h3,#portal .metric>span{font-weight:700;color:var(--ink);font-size:14px}
 #portal .access-copy strong{font-weight:700;font-size:16px}
+
+/* Shared ivory and walnut typography and mobile layout. */
+.bsd{position:absolute;top:8px;right:18px;font-size:11px;line-height:1;color:var(--oak);z-index:3}
+#portal h1,#portal h2,#portal h3,#portal h4,#portal summary,.help-section h2{font-family:Arial,"Noto Sans Hebrew",sans-serif;font-weight:800}
+#portal .unit-details dt,#portal .people h3,#portal .metric>span{font-weight:800!important;font-size:15px;color:#38281f}
+#portal .access-copy strong{font-weight:800!important;font-size:17px}
+.login-content h1{white-space:normal;font-weight:800;font-size:clamp(30px,3.2vw,44px)}
+.login-support{max-width:1120px;margin:28px auto;padding:26px 32px}
+body:not(.login-mode) .login-support{display:none}
+.login-support h2{font-size:25px}
+input,select,textarea{font-size:16px}
+.person-contact,.help-contact a{min-height:32px;padding:4px 0}
+#portal .people>*{min-width:0}.person-name{overflow-wrap:anywhere}
+@media(max-width:700px){.login-support{margin:20px 16px}.login-content{min-height:620px}.login-photo{min-height:290px;max-height:400px}.login-brand{left:26px;right:26px;justify-content:center;gap:10px}.login-brand strong{font-size:25px}.login-brand span{font-size:12px}.portal-hero{padding:25px 20px;flex-wrap:wrap}.portal-welcome h1{font-size:32px}.apartment{padding:22px 18px}.people{grid-template-columns:1fr;gap:20px}.metrics{grid-template-columns:1fr}.metric{padding:17px}.help-section h2{font-size:24px}.login-help{margin:25px 0}#portal .unit-details dt,#portal .people h3,#portal .metric>span{font-size:14px}.header-note{max-width:105px;text-align:left}header{padding:30px 18px 18px}footer{flex-wrap:wrap}}
+@media(max-width:380px){.login-brand{flex-wrap:wrap}.login-brand strong{font-size:24px}.login-content h1{font-size:29px}.access-buttons{grid-template-columns:1fr}.unit-details{gap:12px;padding:15px}.brand{font-size:22px}.login-content{padding-left:20px;padding-right:20px}}
+.login-content h2{font-weight:800}

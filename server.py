@@ -127,6 +127,18 @@ def app(env, start):
             return respond({'error':'התמונה אינה זמינה'},'404 Not Found')
         finally:
             if db: db.close()
+    if path == '/api/support' and method=='GET':
+        db = None
+        try:
+            db = connect()
+            row = db.execute('SELECT payload FROM apartments ORDER BY apt LIMIT 1').fetchone()
+            source = json.loads(row['payload']).get('support',[]) if row else []
+            contacts = [{k:str(c.get(k,'')) for k in ('name','topics','phone')} for c in source[:2] if isinstance(c,dict)]
+            return respond({'contacts':contacts})
+        except Exception:
+            return respond({'contacts':[]})
+        finally:
+            if db: db.close()
     if path == '/health': return respond({'ok': True})
     if path == '/api/status' and method == 'GET':
         db = None

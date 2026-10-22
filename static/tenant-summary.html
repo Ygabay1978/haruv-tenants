@@ -2,16 +2,16 @@
 <html lang="he" dir="rtl">
 <head><meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' 'self'; connect-src 'none'; font-src 'self'; img-src 'self' data: blob:">
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>בניין חרוב · שתולים 57 · תמונת מצב</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Rubik:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+
 <style>
   :root{
     --bg:#0A1220; --bg-2:#0D1830; --surface:#131F35; --surface-2:#1B2B47; --surface-3:#22365a;
     --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.18);
-    --text:#EEF2FA; --text-soft:#93A0BE; --text-faint:#5E6C8A;
-    --sky:#3DC4A6; --coral:#FF6B4A; --sun:#FFB238; --teal:#1FE0B8; --grape:#B98BFF; --rose:#FF5C93;
+    --text:#38281f; --text-soft:#766b60; --text-faint:#5E6C8A;
+    --sky:#247547; --coral:#b2342b; --sun:#FFB238; --teal:#247547; --grape:#B98BFF; --rose:#FF5C93;
     --teal-glow:rgba(31,224,184,0.4); --coral-glow:rgba(255,107,74,0.45);
     --shadow: 0 4px 16px rgba(0,0,0,0.35), 0 20px 46px -18px rgba(0,0,0,0.55);
   }
@@ -22,9 +22,9 @@
       radial-gradient(900px 600px at 88% -6%, rgba(63,169,245,0.16), transparent 60%),
       radial-gradient(700px 500px at 6% 8%, rgba(255,107,74,0.12), transparent 55%),
       var(--bg);
-    color:var(--text); font-family:'Rubik',sans-serif; min-height:100vh;
+    color:var(--text); font-family:Arial,sans-serif; min-height:100vh;
   }
-  .num{font-family:'Roboto Mono',monospace; font-feature-settings:"tnum";}
+  .num{font-family:Arial,sans-serif; font-feature-settings:"tnum";}
   .shell{ max-width:900px; margin:0 auto; padding:20px 16px 50px; }
 
   .masthead{
@@ -59,7 +59,7 @@
   .kpi-icon{ width:28px;height:28px;border-radius:8px; display:flex;align-items:center;justify-content:center; margin-bottom:8px; position:relative; z-index:1; }
   .kpi-icon svg{ width:15px;height:15px; }
   .kpi-label{ font-size:10.5px; color:var(--text-soft); font-weight:600; position:relative; z-index:1; line-height:1.3; }
-  .kpi-value{ font-family:'Roboto Mono',monospace; font-weight:700; font-size:18px; position:relative; z-index:1; margin-top:2px; }
+  .kpi-value{ font-family:Arial,sans-serif; font-weight:700; font-size:18px; position:relative; z-index:1; margin-top:2px; }
   .kpi-sub{ font-size:9.5px; color:var(--text-soft); margin-top:4px; position:relative; z-index:1;}
 
   .overview-grid{ display:grid; grid-template-columns: 170px 1fr; gap:16px; margin-bottom:20px; }
@@ -71,11 +71,11 @@
   .roofline{ width:44px; height:0; border-left:22px solid transparent; border-right:22px solid transparent; border-bottom:13px solid var(--surface-3); margin-bottom:-1px; }
   .windows{ display:grid; grid-template-columns:repeat(4,1fr); grid-template-rows:repeat(5,1fr); gap:5px; width:100%; height:110px; background:var(--bg-2); padding:6px; border-radius:6px; border:1px solid var(--border); }
   .window{ border-radius:3px; background:rgba(255,255,255,0.045); }
-  .elevation-pct{ margin-top:10px; font-family:'Roboto Mono',monospace; font-weight:800; font-size:18px; }
+  .elevation-pct{ margin-top:10px; font-family:Arial,sans-serif; font-weight:800; font-size:18px; }
   .pct-months{ display:grid; grid-template-columns:repeat(3,1fr); gap:4px; width:100%; }
   .pct-month-box{ border-radius:6px; padding:4px 2px 3px; text-align:center; }
   .pct-month-box .pmname{ display:block; font-size:7.5px; font-weight:600; color:#04182b; opacity:0.85; margin-bottom:1px; }
-  .pct-month-box .pmval{ display:block; font-family:'Roboto Mono',monospace; font-size:9.5px; font-weight:700; color:#04182b; }
+  .pct-month-box .pmval{ display:block; font-family:Arial,sans-serif; font-size:9.5px; font-weight:700; color:#04182b; }
   .elevation-caption{ font-size:9.5px; color:var(--text-soft); margin-top:2px; text-align:center; }
 
   .chart-card{ border-radius:14px; padding:14px 16px 10px; background:var(--surface-2); border:1px solid var(--border); }
@@ -87,7 +87,7 @@
   .chart-tooltip{
     position:absolute; pointer-events:none; opacity:0; transition:opacity .1s ease;
     background:#050A14; color:#fff; font-size:11px; line-height:1.6; padding:7px 10px;
-    border-radius:8px; white-space:nowrap; z-index:20; font-family:'Rubik',sans-serif;
+    border-radius:8px; white-space:nowrap; z-index:20; font-family:Arial,sans-serif;
     box-shadow:0 10px 26px rgba(0,0,0,0.55); border:1px solid var(--border-strong);
   }
 
@@ -99,7 +99,7 @@
   .fixed-legend-row{ display:flex; align-items:center; justify-content:space-between; font-size:11.5px; padding:6px 9px; border-radius:8px; background:var(--surface-3); }
   .fixed-legend-row .lbl{ display:flex; align-items:center; gap:7px; color:var(--text); }
   .swatch{ width:9px;height:9px;border-radius:3px;flex:none; }
-  .fixed-legend-row .amt{ font-family:'Roboto Mono',monospace; color:var(--text-soft); font-weight:600; font-size:11px; }
+  .fixed-legend-row .amt{ font-family:Arial,sans-serif; color:var(--text-soft); font-weight:600; font-size:11px; }
 
   footer{ text-align:center; font-size:10.5px; color:var(--text-faint); margin-top:24px; line-height:1.7; }
 
@@ -119,14 +119,21 @@
 <style id="pro-refine">
 :root{--bg:#0E1626;--bg-2:#0E1626;--surface:#121D33;--surface-2:#182540;--surface-3:#1F2F50;
 --border:rgba(255,255,255,.07);--border-strong:rgba(255,255,255,.14);--text:#EAF0FA;--text-soft:#9AA7C2;--text-faint:#667391;
---sky:#5AA9E6;--teal:#3DC4A6;--sun:#E5B14C;--coral:#E97B60;--grape:#9D8FE3;--rose:#E4698E;
+--sky:#5AA9E6;--teal:#247547;--sun:#E5B14C;--coral:#E97B60;--grape:#9D8FE3;--rose:#E4698E;
 --sky-glow:transparent;--coral-glow:transparent;--sun-glow:transparent;--teal-glow:transparent;--grape-glow:transparent;--rose-glow:transparent;
 --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);--shadow-lift:var(--shadow)}
 body{background:var(--bg)!important}
 *{text-shadow:none!important}
 .masthead::after{opacity:.55}
 </style>
-</head>
+<style id="residence-theme">
+:root{--bg:#f6f1e9;--bg-2:#eee4d6;--surface:#fffdf9;--surface-2:#f4ecdf;--surface-3:#e4d4bf;--border:#e4d8c7;--border-strong:#cbb38e;--text:#38281f;--text-soft:#756452;--text-faint:#766b60;--sky:#247547;--teal:#247547;--coral:#b2342b;--sun:#a27936;--grape:#95734e;--shadow:0 4px 18px #38281f08}
+body{background:var(--bg)!important;color:var(--text);font-family:Arial,sans-serif}
+.masthead h1{background:none;color:var(--text);-webkit-text-fill-color:var(--text);font-family:Arial,sans-serif;font-weight:800}
+.masthead::after{background:#bc9d6c;height:1px}.kpi-label,.chart-card h4,.elevation-card h4{font-weight:800;font-size:14px}.kpi-icon{font-weight:800}.kpi-label{color:var(--text)}.kpi.c-teal .kpi-icon{background:#24754716;color:#247547}.kpi.c-coral .kpi-icon{background:#b2342b13;color:#b2342b}.kpi::before{display:none}.kpi-sub{font-size:11px}.chart-tooltip{background:#fffdf9;color:#38281f;border:1px solid #d7c6ad}.kpi-grid{grid-template-rows:none;grid-auto-flow:row}.kpi-value{font-size:21px}.fixed-legend .amt{color:#b2342b}.building-mark{box-shadow:none}.elevation-card{background:#eee4d6!important}.chart-card{background:var(--surface-2)}
+@media(max-width:600px){.shell{padding:18px 10px 30px}.overview-grid{grid-template-columns:1fr}.combined-fixed-grid{grid-template-columns:1fr}.chart-wrap{height:230px}.kpi-label{font-size:13px}.kpi-value{font-size:19px}.masthead h1{font-size:21px}.fixed-legend-row{font-size:12px}.chart-card h4{line-height:1.6}}
+@media(max-width:350px){.kpi-grid{grid-template-columns:1fr}.kpi-value{font-size:22px}}
+</style></head>
 <body>
 <div class="shell">
 
@@ -179,7 +186,7 @@ body{background:var(--bg)!important}
 (function(){
   "use strict";
   const MONTHS_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  const PALETTE = ['#3DC4A6','#FF6B4A','#FFB238','#1FE0B8','#B98BFF','#FF5C93','#5FE07A','#FFCB47','#7C9BFF','#FF7A7A','#39C7C7','#E0A94E'];
+  const PALETTE = ['#247547','#b2342b','#FFB238','#247547','#B98BFF','#FF5C93','#5FE07A','#FFCB47','#7C9BFF','#FF7A7A','#39C7C7','#E0A94E'];
 
   const s = JSON.parse(document.getElementById('embedded-summary').textContent);
   document.getElementById('buildingPhoto').src = '/building-photo';
@@ -249,24 +256,24 @@ body{background:var(--bg)!important}
     const svg = svgEl('svg', { viewBox:`0 0 ${W} ${H}`, width:'100%', height:'100%', style:'overflow:visible; display:block;' });
     for(let i=0;i<=3;i++){
       const gy = padT + plotH*i/3;
-      svg.appendChild(svgEl('line', { x1:padL, x2:W-padR, y1:gy, y2:gy, stroke:'rgba(255,255,255,0.08)' }));
+      svg.appendChild(svgEl('line', { x1:padL, x2:W-padR, y1:gy, y2:gy, stroke:'rgba(56,40,31,0.12)' }));
     }
     if(zeroY > padT && zeroY < padT+plotH){
-      svg.appendChild(svgEl('line', { x1:padL, x2:W-padR, y1:zeroY, y2:zeroY, stroke:'rgba(255,255,255,0.22)' }));
+      svg.appendChild(svgEl('line', { x1:padL, x2:W-padR, y1:zeroY, y2:zeroY, stroke:'rgba(56,40,31,0.22)' }));
     }
     const n = labels.length, groupW = plotW/n, barW = groupW*0.3;
     const tt = ensureTooltip(container);
     labels.forEach((lab,i)=>{
       const gx = padL + groupW*i;
       const incY = yOf(income[i]), incH = Math.abs(zeroY-incY) || 0.001;
-      const incBar = svgEl('rect',{ x:gx+groupW*0.12, y:Math.min(incY,zeroY), width:barW, height:incH, rx:3, fill:'#3DC4A6' });
+      const incBar = svgEl('rect',{ x:gx+groupW*0.12, y:Math.min(incY,zeroY), width:barW, height:incH, rx:3, fill:'#247547' });
       svg.appendChild(incBar);
       bindTooltip(incBar, container, tt, ()=> `<b>${lab}</b><br>הכנסות: <b>${fmtILS(income[i])}</b>`);
       const expY = yOf(expenses[i]), expH = Math.abs(zeroY-expY) || 0.001;
-      const expBar = svgEl('rect',{ x:gx+groupW*0.12+barW+3, y:Math.min(expY,zeroY), width:barW, height:expH, rx:3, fill:'#FF6B4A' });
+      const expBar = svgEl('rect',{ x:gx+groupW*0.12+barW+3, y:Math.min(expY,zeroY), width:barW, height:expH, rx:3, fill:'#b2342b' });
       svg.appendChild(expBar);
       bindTooltip(expBar, container, tt, ()=> `<b>${lab}</b><br>הוצאות: <b>${fmtILS(expenses[i])}</b>`);
-      const t = svgEl('text',{ x:gx+groupW/2, y:H-6, 'text-anchor':'middle', 'font-size':'8.5', 'font-family':'Rubik', fill:'#93A0BE' });
+      const t = svgEl('text',{ x:gx+groupW/2, y:H-6, 'text-anchor':'middle', 'font-size':'8.5', 'font-family':'Rubik', fill:'#766b60' });
       t.textContent = lab.slice(0,3);
       svg.appendChild(t);
     });
@@ -292,9 +299,9 @@ body{background:var(--bg)!important}
       bindTooltip(p, container, tt, ()=> `<b>${it.name}</b><br>${fmtILS(it.amount)} (${(frac*100).toFixed(0)}%)`);
       svg.appendChild(p);
     });
-    const t1 = svgEl('text', { x:cx, y:cy-3, 'text-anchor':'middle', 'font-size':'15', 'font-weight':'700', 'font-family':'Roboto Mono', fill:'#EEF2FA' });
+    const t1 = svgEl('text', { x:cx, y:cy-3, 'text-anchor':'middle', 'font-size':'15', 'font-weight':'700', 'font-family':'Roboto Mono', fill:'#38281f' });
     t1.textContent = fmtILS(totalAmount);
-    const t2 = svgEl('text', { x:cx, y:cy+15, 'text-anchor':'middle', 'font-size':'9.5', 'font-family':'Rubik', fill:'#93A0BE' });
+    const t2 = svgEl('text', { x:cx, y:cy+15, 'text-anchor':'middle', 'font-size':'9.5', 'font-family':'Rubik', fill:'#766b60' });
     t2.textContent = 'סה"כ חודשי';
     svg.appendChild(t1); svg.appendChild(t2);
     container.appendChild(svg);
@@ -321,9 +328,9 @@ body{background:var(--bg)!important}
 
   // ---- elevation (per-month collection %) ----
   const floors = document.getElementById('floors');
-  const monthPctColor = (p) => p >= 0.80 ? '#1FE0B8' : (p >= 0.50 ? '#FFB238' : '#FF6B4A');
+  const monthPctColor = (p) => p >= 0.80 ? '#247547' : (p >= 0.50 ? '#FFB238' : '#b2342b');
   let floorsHtml = '';
-  for(let i=0;i<12;i++){
+  for(let i=0;i<Math.min(12,s.months.length);i++){
     const pct = s.currentMonthlyIncome > 0 ? (s.monthlyIncome[i] / s.currentMonthlyIncome) : 0;
     const bg = monthPctColor(pct);
     floorsHtml += `<div class="pct-month-box" style="background:${bg}"><span class="pmname">${s.months[i].slice(0,3)}</span><span class="pmval">${Math.round(pct*100)}%</span></div>`;
@@ -331,12 +338,12 @@ body{background:var(--bg)!important}
   floors.innerHTML = floorsHtml;
   const elevPct = document.getElementById('elevPct');
   elevPct.textContent = fmtPct(s.collectionPct);
-  elevPct.style.color = s.collectionPct >= 0.55 ? '#1FE0B8' : (s.collectionPct >= 0.4 ? '#FFB238' : '#FF6B4A');
+  elevPct.style.color = s.collectionPct >= 0.55 ? '#247547' : (s.collectionPct >= 0.4 ? '#FFB238' : '#b2342b');
 
   // ---- monthly chart ----
   document.getElementById('monthlyLegend').innerHTML = `
-    <div class="chart-legend-item"><span class="sw" style="background:#3DC4A6"></span>הכנסות</div>
-    <div class="chart-legend-item"><span class="sw" style="background:#FF6B4A"></span>הוצאות</div>
+    <div class="chart-legend-item"><span class="sw" style="background:#247547"></span>הכנסות</div>
+    <div class="chart-legend-item"><span class="sw" style="background:#b2342b"></span>הוצאות</div>
   `;
   drawMonthlyChart('monthlyChart', s.months, s.monthlyIncome, s.monthlyExpenses);
 
