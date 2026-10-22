@@ -1,9 +1,9 @@
 """Private tenant portal. Run behind HTTPS with gunicorn server:app."""
-import os, json, sqlite3, secrets, hashlib, time, re, hmac
+import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging
 from http.cookies import SimpleCookie
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -46,14 +46,44 @@ def limit(c, key, maximum, seconds):
         c.execute('DELETE FROM attempts WHERE at<?',(now-86400,))
     return True
 
+def delivery_event(event, http_status=None, reason=None):
+    # Fixed categories only: never log recipient, OTP, API key or raw provider text.
+    logging.getLogger('portal.delivery').warning(json.dumps({
+        'event':event, 'http_status':http_status, 'reason':reason}))
+
+def provider_reason(error):
+    try:
+        body = json.loads(error.read(8192))
+        code = body.get('code')
+        message = str(body.get('message','')).lower()
+        if 'ip' in message and any(v in message for v in ('unrecogn', 'authoriz', 'whitelist', 'allowlist')):
+            return 'provider_ip_restriction'
+        if 'sender' in message: return 'provider_sender_rejected'
+        if 'activat' in message or 'suspend' in message: return 'provider_account_restricted'
+        if code in ('unauthorized','permission_denied','invalid_parameter','missing_parameter','not_enough_credits','account_under_validation','too_many_requests'):
+            return code
+    except Exception:
+        pass
+    return 'provider_rejected'
+
 def send_email(address, code):
     payload = {'sender':{'name':'בניין חרוב','email':email(os.environ['EMAIL_FROM'])},
                'to':[{'email':address}], 'subject':'קוד כניסה לפורטל בניין חרוב',
                'textContent':f'קוד הכניסה שלך: {code}\nהקוד תקף ל-10 דקות ולשימוש אחד. אין להעביר אותו לאחרים.\nאם לא ביקשת קוד כניסה, אפשר להתעלם מההודעה.'}
     req = Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),
                   headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})
-    with urlopen(req,timeout=12) as response:
-        if response.status != 201: raise RuntimeError('Email delivery failed')
+    try:
+        with urlopen(req,timeout=12) as response:
+            if response.status != 201:
+                delivery_event('email_delivery_failed', response.status, 'unexpected_provider_status')
+                raise RuntimeError('Email delivery failed')
+        delivery_event('email_provider_accepted', 201)
+    except HTTPError as error:
+        delivery_event('email_delivery_failed', error.code, provider_reason(error))
+        raise RuntimeError('Email delivery failed') from None
+    except (URLError, TimeoutError, OSError):
+        delivery_event('email_delivery_failed', reason='provider_connection_failed')
+        raise RuntimeError('Email delivery failed') from None
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -73,9 +103,9 @@ def app(env, start):
             db = connect()
             ready = db.execute('SELECT 1 FROM apartments LIMIT 1').fetchone() is not None
             grants = db.execute('SELECT 1 FROM email_memberships WHERE active=1 LIMIT 1').fetchone() is not None
-            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'email-v1'})
+            return respond({'database':'connected','data_ready':ready,'email_access_ready':grants,'email_configured':email_configured(),'version':'email-v2'})
         except Exception:
-            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'email-v1'}, '503 Service Unavailable')
+            return respond({'database':'unavailable','data_ready':False,'email_configured':False,'version':'email-v2'}, '503 Service Unavailable')
         finally:
             if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
@@ -111,6 +141,8 @@ def app(env, start):
                     except Exception:
                         c.execute('DELETE FROM email_challenges WHERE email=? AND nonce=?',(p,nonce));c.commit()
                         # Same public response prevents account enumeration on delivery errors.
+                else:
+                    delivery_event('email_request_skipped', reason='no_active_membership')
                 return respond({'message':'אם המייל מורשה, נשלח אליו קוד כניסה. בדקו גם בתיקיית הספאם.'})
             if not limit(c,'email-verify-global',1000,600) or not limit(c,'email-verify:'+p,5,600):
                 return respond({'error':'יותר מדי ניסיונות; יש להמתין'},'429 Too Many Requests')

@@ -42,6 +42,17 @@ class IsolationTests(unittest.TestCase):
         self.challenge()
         for _ in range(5): self.request('/api/verify-code',{'email':'owner@example.com','code':'000000'})
         self.assertTrue(self.request('/api/verify-code',{'email':'owner@example.com','code':'123456'})['status'].startswith('429'))
+    def test_provider_rejection_logs_safe_reason_only(self):
+        from urllib.error import HTTPError
+        raw=json.dumps({'code':'unauthorized','message':'private-api-key owner@example.com 123456'}).encode()
+        error=HTTPError('https://api.brevo.com/v3/smtp/email',401,'Unauthorized',{},io.BytesIO(raw))
+        with patch('server.urlopen',side_effect=error), self.assertLogs('portal.delivery',level='WARNING') as logs:
+            r=self.request('/api/send-code',{'email':'owner@example.com'})
+        output=' '.join(logs.output)
+        self.assertIn('unauthorized',output);self.assertIn('401',output)
+        for secret in ['private-api-key','owner@example.com','123456']: self.assertNotIn(secret,output)
+        self.assertTrue(r['status'].startswith('200'))
+        self.assertIsNone(self.c.execute('SELECT 1 FROM email_challenges').fetchone())
     def test_no_auth_no_data(self):
         for path in ['/api/apartments','/api/summary']:
             r=self.request(path);self.assertTrue(r['status'].startswith('401'));self.assertNotIn(b'98765',r['body'])
