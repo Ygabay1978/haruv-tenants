@@ -9,20 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
-SCHEMA = '''
-CREATE TABLE IF NOT EXISTS apartments(apt INTEGER PRIMARY KEY, payload TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS memberships(phone TEXT NOT NULL, apt INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','tenant')), active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(phone,apt,role));
-CREATE TABLE IF NOT EXISTS sessions(digest TEXT PRIMARY KEY, phone TEXT NOT NULL, expires INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS attempts(key TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS attempts_time ON attempts(key,at);
-CREATE TABLE IF NOT EXISTS summary(id INTEGER PRIMARY KEY CHECK(id=1), html TEXT NOT NULL);
-'''
+import storage
 
 def connect():
-    c = sqlite3.connect(DB, timeout=15)
-    c.row_factory = sqlite3.Row
-    c.executescript(SCHEMA)
-    return c
+    return storage.connect(DB)
 
 def phone(value):
     s = re.sub(r'[\s()\-]', '', str(value or ''))
@@ -37,14 +27,12 @@ def allowed(c, p):
 
 def limit(c, key, maximum, seconds):
     now = int(time.time())
-    # Serialize limit check and reservation across workers.
-    c.execute('BEGIN IMMEDIATE')
-    count = c.execute('SELECT count(*) FROM attempts WHERE key=? AND at>?', (key,now-seconds)).fetchone()[0]
-    if count >= maximum:
-        c.rollback(); return False
-    c.execute('INSERT INTO attempts VALUES(?,?)',(key,now))
-    c.execute('DELETE FROM attempts WHERE at<?',(now-86400,))
-    c.commit(); return True
+    with c.transaction(lock='rate:'+key):
+        row = c.execute('SELECT count(*) AS total FROM attempts WHERE key=? AND at>?', (key,now-seconds)).fetchone()
+        if row['total'] >= maximum: return False
+        c.execute('INSERT INTO attempts VALUES(?,?)',(key,now))
+        c.execute('DELETE FROM attempts WHERE at<?',(now-86400,))
+    return True
 
 def twilio(action, fields):
     sid, token, service = [os.environ.get(k,'') for k in ('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_VERIFY_SERVICE_SID')]
@@ -68,6 +56,17 @@ def app(env, start):
         kind = {'/':'text/html','/app.js':'application/javascript','/style.css':'text/css'}[path]
         return respond((ROOT/'static'/name).read_text(),kind=kind+'; charset=utf-8')
     if path == '/health': return respond({'ok': True})
+    if path == '/api/status' and method == 'GET':
+        db = None
+        try:
+            db = connect()
+            ready = db.execute('SELECT 1 FROM apartments LIMIT 1').fetchone() is not None
+            sms = all(os.environ.get(k) for k in ('TWILIO_ACCOUNT_SID','TWILIO_AUTH_TOKEN','TWILIO_VERIFY_SERVICE_SID'))
+            return respond({'database':'connected','data_ready':ready,'sms_configured':sms,'version':'neon-v1'})
+        except Exception:
+            return respond({'database':'unavailable','data_ready':False,'sms_configured':False,'version':'neon-v1'}, '503 Service Unavailable')
+        finally:
+            if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
     if method not in ('GET','POST'): return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
     if method == 'POST' and (not ORIGIN or env.get('HTTP_ORIGIN') != ORIGIN):
@@ -78,8 +77,9 @@ def app(env, start):
         body = json.loads(env['wsgi.input'].read(n) or b'{}') if method=='POST' else {}
         if not isinstance(body,dict): raise ValueError()
     except (ValueError,TypeError): return respond({'error':'בקשה לא תקינה'},'400 Bad Request')
-    c = connect()
+    c = None
     try:
+        c = connect()
         if path in ('/api/send-code','/api/verify-code') and method=='POST':
             try: p = phone(body.get('phone'))
             except ValueError: return respond({'error':'יש להזין מספר נייד תקין'},'400 Bad Request')
@@ -124,4 +124,5 @@ def app(env, start):
     except Exception:
         # No codes, phones, tokens or provider response bodies in logs.
         return respond({'error':'השירות אינו זמין כרגע. נא לפנות לוועד'},'503 Service Unavailable')
-    finally: c.close()
+    finally:
+        if c: c.close()

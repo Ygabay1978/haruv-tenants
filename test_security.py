@@ -1,15 +1,19 @@
-import unittest,tempfile,io,json,time,hashlib
+import unittest,tempfile,io,json,time,hashlib,os
 from pathlib import Path
 from unittest.mock import patch
 import server
 
 class IsolationTests(unittest.TestCase):
     def setUp(self):
+        self.env_patch=patch.dict(os.environ, {'DATABASE_URL':os.environ.get('TEST_DATABASE_URL',''),'PORTAL_TEST_DATABASE':'1'})
+        self.env_patch.start()
         self.temp=tempfile.TemporaryDirectory();self.old=server.DB;server.DB=str(Path(self.temp.name)/'db');server.ORIGIN='https://portal.test'
         self.c=server.connect()
+        with self.c:
+            for table in ['sessions','attempts','memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
         self.c.executemany('INSERT INTO apartments VALUES(?,?)',[(1,'{"paid":100}'),(2,'{"paid":98765}')])
         self.c.executemany('INSERT INTO memberships VALUES(?,?,?,1)',[('+972501111111',1,'owner'),('+972502222222',1,'tenant'),('+972503333333',2,'owner')]);self.c.commit()
-    def tearDown(self):self.c.close();server.DB=self.old;self.temp.cleanup()
+    def tearDown(self):self.c.close();server.DB=self.old;self.temp.cleanup();self.env_patch.stop()
     def request(self,path,body=None,cookie='',origin='https://portal.test'):
         raw=json.dumps(body).encode() if body is not None else b'';out={}
         env={'PATH_INFO':path,'REQUEST_METHOD':'POST' if body is not None else 'GET','HTTP_ORIGIN':origin,'CONTENT_LENGTH':str(len(raw)),'wsgi.input':io.BytesIO(raw),'HTTP_COOKIE':cookie}

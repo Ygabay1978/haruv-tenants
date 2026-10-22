@@ -33,7 +33,7 @@ def import_data(full, tenants):
             except ValueError: rejected += 1; continue
             grants.add((p,apt,'owner' if field.startswith('owner') else 'tenant'))
     if not rows or not grants: raise ValueError('No valid apartments or memberships; import cancelled')
-    Path(server.DB).parent.mkdir(parents=True,exist_ok=True)
+    if not os.environ.get('DATABASE_URL'): Path(server.DB).parent.mkdir(parents=True,exist_ok=True)
     c = server.connect()
     try:
         with c:
@@ -41,11 +41,11 @@ def import_data(full, tenants):
             c.executemany('INSERT INTO apartments VALUES(?,?)',[(apt,json.dumps(v,ensure_ascii=False)) for apt,v in rows.items()])
             # Preserve explicit deactivations for retained contacts; remove departed contacts.
             for old in c.execute('SELECT phone,apt,role FROM memberships').fetchall():
-                if tuple(old) not in grants: c.execute('DELETE FROM memberships WHERE phone=? AND apt=? AND role=?',tuple(old))
-            c.executemany('INSERT OR IGNORE INTO memberships(phone,apt,role) VALUES(?,?,?)',sorted(grants))
-            c.execute('INSERT OR REPLACE INTO summary VALUES(1,?)',(html,))
+                if (old['phone'],old['apt'],old['role']) not in grants: c.execute('DELETE FROM memberships WHERE phone=? AND apt=? AND role=?',(old['phone'],old['apt'],old['role']))
+            c.executemany('INSERT INTO memberships(phone,apt,role) VALUES(?,?,?) ON CONFLICT(phone,apt,role) DO NOTHING',sorted(grants))
+            c.execute('INSERT INTO summary VALUES(1,?) ON CONFLICT(id) DO UPDATE SET html=excluded.html',(html,))
             c.execute('DELETE FROM sessions WHERE phone NOT IN (SELECT phone FROM memberships WHERE active=1)')
-        os.chmod(server.DB,0o600)
+        if not c.postgres: os.chmod(server.DB,0o600)
         return {'apartments':len(rows),'phone_apartment_roles':len(grants),'unique_phones':len({g[0] for g in grants}),'skipped_phone_fields':rejected}
     finally: c.close()
 

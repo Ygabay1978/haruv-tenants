@@ -1,0 +1,97 @@
+"""Private persistence: Neon/Postgres in production; SQLite for local development."""
+import os, re, sqlite3, threading
+from contextlib import contextmanager
+
+TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary')
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS apartments(apt INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS memberships(phone TEXT NOT NULL, apt INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','tenant')), active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(phone,apt,role));
+CREATE TABLE IF NOT EXISTS sessions(digest TEXT PRIMARY KEY, phone TEXT NOT NULL, expires BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS attempts(key TEXT NOT NULL, at BIGINT NOT NULL);
+CREATE INDEX IF NOT EXISTS attempts_time ON attempts(key,at);
+CREATE TABLE IF NOT EXISTS summary(id INTEGER PRIMARY KEY CHECK(id=1), html TEXT NOT NULL);
+'''
+_init_lock = threading.Lock()
+_ready_urls = set()
+
+class Database:
+    def __init__(self, connection, postgres=False):
+        self.connection = connection
+        self.postgres = postgres
+
+    def sql(self, statement):
+        if not self.postgres: return statement
+        statement = statement.replace('?', '%s').replace('group_concat(m.role)', "string_agg(m.role, ',')")
+        # Table identifiers are fixed application-owned names, never user inputs.
+        return re.sub(r'(?<![.\w])('+'|'.join(TABLES)+r')\b', r'portal.\1', statement)
+
+    def execute(self, statement, values=()):
+        return self.connection.execute(self.sql(statement), values)
+
+    def executemany(self, statement, values):
+        cursor = self.connection.cursor()
+        try: cursor.executemany(self.sql(statement), values)
+        finally: cursor.close()
+
+    @contextmanager
+    def transaction(self, lock=None):
+        if self.postgres:
+            with self.connection.transaction():
+                if lock is not None:
+                    number = int.from_bytes(__import__('hashlib').sha256(lock.encode()).digest()[:8], 'big', signed=True)
+                    self.connection.execute('SELECT pg_advisory_xact_lock(%s)', (number,))
+                yield self
+        else:
+            self.connection.execute('BEGIN IMMEDIATE')
+            try:
+                yield self
+                self.connection.commit()
+            except BaseException:
+                self.connection.rollback()
+                raise
+
+    def commit(self): self.connection.commit()
+    def rollback(self): self.connection.rollback()
+    def close(self): self.connection.close()
+
+    def __enter__(self):
+        self._transaction = self.transaction()
+        self._transaction.__enter__()
+        return self
+
+    def __exit__(self, *args):
+        return self._transaction.__exit__(*args)
+
+
+def connect(local_path):
+    url = os.environ.get('DATABASE_URL', '').strip()
+    if url:
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg.conninfo import conninfo_to_dict
+        details = conninfo_to_dict(url)
+        if details.get('host','').endswith('.neon.tech'):
+            details.update(sslmode='verify-full', sslrootcert='/etc/ssl/certs/ca-certificates.crt', channel_binding='require')
+        else:
+            # Only explicit local test connections may run without TLS.
+            if os.environ.get('PORTAL_TEST_DATABASE') != '1':
+                details.update(sslmode='verify-full', sslrootcert='/etc/ssl/certs/ca-certificates.crt')
+        db = Database(psycopg.connect(**details, row_factory=dict_row, autocommit=True, connect_timeout=15, prepare_threshold=None), True)
+        try:
+            with _init_lock:
+                if url not in _ready_urls:
+                    with db.transaction(lock='haruv-schema-v1'):
+                        db.connection.execute('CREATE SCHEMA IF NOT EXISTS portal')
+                        for statement in SCHEMA.split(';'):
+                            if statement.strip(): db.execute(statement)
+                    _ready_urls.add(url)
+            return db
+        except BaseException:
+            db.close()
+            raise
+    if os.environ.get('RENDER'):
+        raise RuntimeError('DATABASE_URL must be configured on Render; local storage is disabled')
+    c = sqlite3.connect(local_path, timeout=15)
+    c.row_factory = sqlite3.Row
+    c.executescript(SCHEMA)
+    return Database(c)

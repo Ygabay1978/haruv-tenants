@@ -12,15 +12,19 @@ Read-only resident portal for building Haruv, Shtulim 57. Public repository cont
 - Residents have no write endpoints. Updates and membership changes are privileged server operations, not resident functions. The existing committee dashboard stays separate.
 - Browser rechecks its data each minute. Authenticated responses use no-store.
 
-## Deployment requirements (not yet provisioned)
+## Deployment
 
-An HTTPS Docker host with a persistent, private disk mounted at `/data`, plus a Twilio account and Verify service with SMS delivery to Israel enabled. This repository does not create accounts, accept terms, purchase plans or send SMS automatically. Configure Twilio spending limits and alerts before launch. Do not deploy on an ephemeral disk, GitHub Pages, or a multi-replica host with separate SQLite disks.
+The application supports Render Free with an external Neon Postgres database. Set `DATABASE_URL` to the complete Neon pooled connection URI in Render's secret environment settings. Keep the password out of GitHub, screenshots and chat. The server enforces TLS certificate verification for Neon connections and does not fall back to local storage on Render. All data, memberships, session hashes and SMS rate limits are stored in Neon, under the private `portal` SQL schema, so Render restarts do not remove them. No Neon browser Data API is enabled or needed.
 
-Environment variables are listed in `.env.example`. Set actual values in the host's secret configuration. `PORTAL_ORIGIN` must match the exact HTTPS origin, without trailing slash. Run the Docker container as its configured non-root user. The app listens on `$PORT` (default 8080) behind the host's TLS proxy. Health check: `/health`. Do not mount `/data` as a web directory.
+Render region and Neon region: Frankfurt. `PORTAL_ORIGIN` must be the exact HTTPS origin (`https://haruv-tenants.onrender.com`), with no trailing slash. Keep Render health path `/health`; it deliberately does not wake Neon. `/api/status` checks database connectivity and returns setup booleans, never connection strings, contacts or financial data. It is diagnostic, not a way to authenticate or access data.
+
+Use `gunicorn server:app` through the supplied Dockerfile. Render supplies `PORT`; do not override it. No persistent Render disk is required in Neon mode. The free hosting/database providers have usage limits and can sleep when inactive. SMS authentication still needs a Twilio account, Verify service and Israel delivery enabled. Configure provider spending limits before live SMS use. This code does not create paid accounts, accept terms or send messages automatically.
+
+For local development, omit `DATABASE_URL` and set `PORTAL_DB` to a private SQLite path. SQLite mode is disabled whenever `RENDER` is present.
 
 ## Private data import
 
-Place trusted copies of both original dashboard HTML files on the private host, outside the Git checkout and web root. Set `PORTAL_DB`, then run:
+Run this from a trusted administrative environment with `DATABASE_URL` set privately to the Neon URI. Keep both original HTML inputs outside the Git checkout and web root. Never pass credentials as CLI arguments. Then run:
 
 ```sh
 python import_data.py --full /private/building57_dashboard.html --tenants /private/building57_tenants.html
@@ -30,12 +34,14 @@ Import runs atomically. It reads owner1Phone, owner1AltPhone, owner2Phone, tenan
 
 For a specific membership, use parameterized SQL in a private administrative session to set `memberships.active=0`. To restore it, set it to 1 after verifying the number and apartment. No public admin token or browser-side administrator bypass exists.
 
-Re-import updated source files to update the portal on the same URL. Changes in a chat do not directly trigger imports: an authorized agent/operator must apply and import the change. Back up the private SQLite database before imports and restrict backup access. Delete temporary uploaded source copies when no longer required.
+Re-import updated source files to update the portal on the same URL. Changes in a chat do not directly trigger imports: an authorized agent/operator must apply and import the change. Back up the private database before imports and restrict backup access. Delete temporary uploaded source copies when no longer required.
 
 ## Validation
 
 ```sh
-python -m unittest -v test_security.py
+python -m unittest -v test_security.py test_storage.py
 ```
 
 Tests mock the SMS provider and cover per-apartment isolation, owner/tenant access, unknown-number rejection, revocation, CSRF checks, OTP outcome handling, secure cookies, throttling, logout and read-only API behavior. Live SMS delivery, deployment, restored backups and the final phone allowlist still require validation before distributing a link.
+
+For PostgreSQL integration testing against a disposable database only, set `TEST_DATABASE_URL` and run the same suite. Never point integration tests at production: each test clears the private portal tables.
