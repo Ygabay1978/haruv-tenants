@@ -360,5 +360,7 @@ body{background:var(--bg)!important;color:var(--text);font-family:Arial,sans-ser
     </div>`).join('');
 })();
 </script>
-</body>
+<script>
+(()=>{if(parent===window)return;const report=()=>{const shell=document.querySelector('.shell');if(shell)parent.postMessage({type:'haruv-summary-height',height:Math.ceil(shell.scrollHeight+24)},'*')};if(window.ResizeObserver)new ResizeObserver(report).observe(document.querySelector('.shell'));window.addEventListener('load',report);window.addEventListener('resize',report);report()})();
+</script></body>
 </html>

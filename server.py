@@ -2,15 +2,16 @@
 import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging, base64
 from http.cookies import SimpleCookie
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from urllib.error import HTTPError, URLError
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
+DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
-import tenant_summary, portal_rules, notice_mail
+import tenant_summary, portal_rules, notice_mail, attachments
 
 def connect():
     return storage.connect(DB)
@@ -129,18 +130,21 @@ def can_preview(c,address):
     return is_admin(c,address) or c.execute('SELECT 1 FROM resident_viewers v JOIN committee_account o ON o.email=v.email AND o.id=1 WHERE v.email=? AND v.active=1',(address,)).fetchone() is not None
 
 def resident_notices(c,address,apt):
-    return [dict(r) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+    return [dict(r,attachments=attachments.list_for(c,r['id'])) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
 def app(env, start):
     status, headers = '200 OK', []
     def respond(body, code='200 OK', kind='application/json; charset=utf-8', extra=()):
         raw = body if isinstance(body,bytes) else body.encode() if isinstance(body,str) else json.dumps(body,ensure_ascii=False).encode()
-        start(code,[('Content-Type',kind),('Content-Length',str(len(raw))),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),('X-Frame-Options','SAMEORIGIN'),('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"),*extra])
+        cors=[('Access-Control-Allow-Origin',DASHBOARD_ORIGIN),('Vary','Origin'),('Access-Control-Allow-Methods','GET, POST, OPTIONS'),('Access-Control-Allow-Headers','Content-Type, Authorization')] if env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN else []
+        start(code,[*cors,('Content-Type',kind),('Content-Length',str(len(raw))),('Cache-Control','no-store'),('X-Content-Type-Options','nosniff'),('Referrer-Policy','no-referrer'),('X-Frame-Options','SAMEORIGIN'),('Content-Security-Policy',"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"),*extra])
         return [raw]
     path, method = env.get('PATH_INFO','/'), env.get('REQUEST_METHOD','GET')
-    if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css'):
-        name = {'/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css'}[path]
-        kind = {'/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css'}[path]
+    if method=='OPTIONS' and path.startswith('/api/'):
+        return respond({}) if env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN else respond({'error':'מקור לא מורשה'},'403 Forbidden')
+    if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css','/dashboard-connect','/dashboard-connect.js'):
+        name = {'/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css','/dashboard-connect':'dashboard-connect.html','/dashboard-connect.js':'dashboard-connect.js'}[path]
+        kind = {'/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css','/dashboard-connect':'text/html','/dashboard-connect.js':'application/javascript'}[path]
         return respond((ROOT/'static'/name).read_text(),kind=kind+'; charset=utf-8')
     if path == '/building-photo' and method=='GET':
         db = None
@@ -180,11 +184,11 @@ def app(env, start):
             if db: db.close()
     if not path.startswith('/api/'): return respond({'error':'לא נמצא'},'404 Not Found')
     if method not in ('GET','POST'): return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
-    if method == 'POST' and (not ORIGIN or env.get('HTTP_ORIGIN') != ORIGIN):
+    if method == 'POST' and (not ORIGIN or not (env.get('HTTP_ORIGIN')==ORIGIN or (env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN and path.startswith('/api/admin/')))):
         return respond({'error':'בקשה לא מורשית'},'403 Forbidden')
     try:
         n = int(env.get('CONTENT_LENGTH') or 0)
-        if n < 0 or n > 20000: raise ValueError()
+        if n < 0 or n > (7500000 if path=='/api/admin/attachments/upload' else 20000): raise ValueError()
         body = json.loads(env['wsgi.input'].read(n) or b'{}') if method=='POST' else {}
         if not isinstance(body,dict): raise ValueError()
     except (ValueError,TypeError): return respond({'error':'בקשה לא תקינה'},'400 Bad Request')
@@ -227,17 +231,37 @@ def app(env, start):
                     c.execute('INSERT INTO email_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),p,int(time.time())+3600))
             if not valid: return respond({'error':'הקוד או פרטי הגישה אינם תקינים'},'401 Unauthorized')
             return respond({'ok':True},extra=[('Set-Cookie',f'__Host-session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600')])
-        cookies = SimpleCookie()
-        try: cookies.load(env.get('HTTP_COOKIE',''))
-        except Exception: return respond({'error':'יש להתחבר'},'401 Unauthorized')
-        token = cookies.get('__Host-session')
-        digest = hashlib.sha256((token.value if token else '').encode()).hexdigest()
-        session = c.execute('SELECT email FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
-        if not session or not allowed(c,session['email']): return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
-        p = session['email']
+        authorization=env.get('HTTP_AUTHORIZATION','')
+        dashboard_auth=bool(authorization) or env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN
+        if dashboard_auth:
+            if env.get('HTTP_ORIGIN')!=DASHBOARD_ORIGIN or not re.fullmatch(r'Bearer [A-Za-z0-9_-]{43}',authorization):return respond({'error':'יש לחבר את חשבון הוועד'},'403 Forbidden')
+            if not path.startswith('/api/admin/') or path=='/api/admin/dashboard-session':return respond({'error':'הרשאה זו מיועדת לניהול הודעות בלבד'},'403 Forbidden')
+            digest=hashlib.sha256(authorization[7:].encode()).hexdigest()
+            session=c.execute('SELECT d.email,d.expires FROM dashboard_sessions d JOIN email_sessions s ON s.digest=d.parent_digest AND s.email=d.email WHERE d.digest=? AND d.expires>? AND s.expires>?',(digest,int(time.time()),int(time.time()))).fetchone()
+        else:
+            cookies = SimpleCookie()
+            try: cookies.load(env.get('HTTP_COOKIE',''))
+            except Exception: return respond({'error':'יש להתחבר'},'401 Unauthorized')
+            token = cookies.get('__Host-session')
+            digest = hashlib.sha256((token.value if token else '').encode()).hexdigest()
+            session = c.execute('SELECT email,expires FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
+        if not session or not allowed(c,session['email']):return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
+        p=session['email']
         if path == '/api/logout' and method=='POST':
             c.execute('DELETE FROM email_sessions WHERE digest=?',(digest,)); c.commit()
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
+        if (path.startswith('/api/attachments/') or path.startswith('/api/admin/attachments/')) and method=='GET':
+            if path.startswith('/api/admin/') and not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            value=path.rsplit('/',1)[-1]
+            if not re.fullmatch(r'[0-9a-f]{32}',value):return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
+            file=c.execute('SELECT * FROM notice_attachments WHERE id=?',(value,)).fetchone()
+            permitted=bool(file and can_preview(c,p))
+            if file and not permitted and file['notice_id']:
+                own=c.execute('SELECT DISTINCT apt FROM email_memberships WHERE email=? AND active=1',(p,)).fetchall()
+                permitted=any(any(n['id']==file['notice_id'] for n in resident_notices(c,p,a['apt'])) for a in own)
+            if not permitted:return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
+            disposition='inline' if file['mime'].startswith('image/') or file['mime']=='application/pdf' else 'attachment'
+            return respond(base64.b64decode(file['data']),kind=file['mime'],extra=[('Content-Disposition',disposition+"; filename*=UTF-8''"+quote(file['filename'])),('Content-Security-Policy',"default-src 'none'; sandbox")])
         if path in ('/api/viewer/context','/api/preview'):
             if not can_preview(c,p):return respond({'error':'צפייה זו זמינה לוועד בלבד'},'403 Forbidden')
             if path=='/api/viewer/context' and method=='GET':
@@ -245,19 +269,46 @@ def app(env, start):
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/preview' and method=='POST':
                 apt=body.get('apt');role=body.get('role')
-                if type(apt) is not int or role not in ('owner','tenant'):return respond({'error':'יש לבחור דירה וסוג דייר'},'400 Bad Request')
+                if type(apt) is not int or role not in ('owner','tenant','committee'):return respond({'error':'יש לבחור דירה וסוג דייר'},'400 Bad Request')
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
-                notices=[dict(n) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role)).fetchall()]
+                notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.resident_payload(row['payload']),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/attachments/upload' and method=='POST':
+                if not limit(c,'attachment-upload:'+p,40,3600):return respond({'error':'נא להמתין לפני העלאת קבצים נוספים'},'429 Too Many Requests')
+                try:name,mime,raw=attachments.decode(body)
+                except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
+                ident=secrets.token_hex(16)
+                c.execute('DELETE FROM notice_attachments WHERE notice_id IS NULL AND created<?',(int(time.time())-86400,))
+                c.execute('INSERT INTO notice_attachments VALUES(?,NULL,?,?,?,?,?)',(ident,name,mime,base64.b64encode(raw).decode(),len(raw),int(time.time())));c.commit()
+                return respond({'id':ident,'filename':name,'mime':mime,'size':len(raw)})
+            if path=='/api/admin/dashboard-session' and method=='POST':
+                if dashboard_auth:return respond({'error':'יש להתחבר לפורטל'},'403 Forbidden')
+                if not limit(c,'dashboard-connect:'+p,20,3600):return respond({'error':'נא להמתין לפני חיבור נוסף'},'429 Too Many Requests')
+                raw=secrets.token_urlsafe(32);expires=min(session['expires'],int(time.time())+1800)
+                c.execute('DELETE FROM dashboard_sessions WHERE expires<?',(int(time.time()),))
+                c.execute('INSERT INTO dashboard_sessions VALUES(?,?,?,?)',(hashlib.sha256(raw.encode()).hexdigest(),p,digest,expires));c.commit()
+                return respond({'token':raw,'expires':expires,'origin':DASHBOARD_ORIGIN})
+            if path in ('/api/admin/notices/delete','/api/admin/notices/restore') and method=='POST':
+                ident=body.get('id');version=body.get('version');restoring=path.endswith('/restore')
+                if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
+                with c.transaction(lock='notice:'+ident):
+                    row=c.execute('SELECT version FROM notices WHERE id=?',(ident,)).fetchone()
+                    if not row or row['version']!=version:return respond({'error':'ההודעה השתנתה. רעננו לפני הפעולה'},'409 Conflict')
+                    c.execute('UPDATE notices SET active=0,version=version+1,updated=? WHERE id=?',(int(time.time()),ident))
+                    if restoring:c.execute('DELETE FROM notice_archives WHERE notice_id=?',(ident,))
+                    else:c.execute('INSERT INTO notice_archives VALUES(?,?) ON CONFLICT(notice_id) DO NOTHING',(ident,int(time.time())))
+                return respond({'ok':True})
+            if path=='/api/admin/notices/deleted' and method=='GET':
+                return respond({'notices':[dict(r,archived=True,attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n JOIN notice_archives a ON a.notice_id=n.id ORDER BY a.deleted DESC').fetchall()]})
             if path=='/api/admin/context' and method=='GET':
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/admin/notices' and method=='GET':
-                return respond({'notices':[dict(r,notification=notice_mail.latest(c,r['id'])) for r in c.execute('SELECT * FROM notices ORDER BY updated DESC,id').fetchall()]})
+                return respond({'notices':[dict(r,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
             if path=='/api/admin/notifications/retry' and method=='POST':
                 ident=body.get('id');version=body.get('version')
                 if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
@@ -268,6 +319,8 @@ def app(env, start):
                 try:values=portal_rules.notice_input(body,c)
                 except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
                 ident=body.get('id');stamp=int(time.time());changed=True;version=1
+                try:chosen=attachments.validate_selection(c,body['attachments'],ident) if 'attachments' in body else None
+                except (ValueError,TypeError):return respond({'error':'יש לבחור עד 5 קבצים תקינים להודעה זו'},'400 Bad Request')
                 if ident:
                     if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'מזהה לא תקין'},'400 Bad Request')
                     requested=body.get('version')
@@ -275,14 +328,17 @@ def app(env, start):
                     with c.transaction(lock='notice:'+ident):
                         old=c.execute('SELECT * FROM notices WHERE id=?',(ident,)).fetchone()
                         if not old or old['version']!=requested:return respond({'error':'ההודעה השתנתה. רעננו לפני שמירה'},'409 Conflict')
-                        changed=tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values)
+                        if c.execute('SELECT 1 FROM notice_archives WHERE notice_id=?',(ident,)).fetchone():return respond({'error':'יש לשחזר את ההודעה לפני עריכה'},'409 Conflict')
+                        changed=tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values) or (chosen is not None and sorted(chosen)!=sorted(a['id'] for a in attachments.list_for(c,ident)))
                         version=requested+int(changed)
                         c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=? WHERE id=?',(*values,stamp,version,ident))
+                        if chosen is not None:attachments.bind(c,ident,chosen)
                         if changed and values[-1]:notice_mail.queue(c,ident,version)
                 else:
                     ident=secrets.token_hex(16)
                     with c.transaction(lock='notice:'+ident):
                         c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp))
+                        if chosen is not None:attachments.bind(c,ident,chosen)
                         if values[-1]:notice_mail.queue(c,ident,version)
                 notification=notice_mail.deliver(c,ident,version,send_notice_emails) if changed and values[-1] else {'state':'not_published' if not values[-1] else 'unchanged','recipients':0}
                 return respond({'ok':True,'id':ident,'notification':notification})

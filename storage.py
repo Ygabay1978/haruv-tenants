@@ -2,8 +2,11 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account')
+TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments')
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS notice_attachments(id TEXT PRIMARY KEY,notice_id TEXT,filename TEXT NOT NULL,mime TEXT NOT NULL,data TEXT NOT NULL,size INTEGER NOT NULL,created BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS dashboard_sessions(digest TEXT PRIMARY KEY,email TEXT NOT NULL,parent_digest TEXT NOT NULL,expires BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS notice_archives(notice_id TEXT PRIMARY KEY,deleted BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS committee_account(id INTEGER PRIMARY KEY CHECK(id=1),email TEXT NOT NULL UNIQUE);
 CREATE TABLE IF NOT EXISTS notice_notifications(notice_id TEXT NOT NULL,version INTEGER NOT NULL,state TEXT NOT NULL,recipients INTEGER NOT NULL DEFAULT 0,updated BIGINT NOT NULL,PRIMARY KEY(notice_id,version));
 CREATE TABLE IF NOT EXISTS resident_viewers(email TEXT PRIMARY KEY,active INTEGER NOT NULL DEFAULT 1);

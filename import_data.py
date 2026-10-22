@@ -23,6 +23,7 @@ def import_data(full, tenants):
         if apt in rows: raise ValueError('Duplicate apartment')
         rows[apt] = {k:r.get(k,0) for k in ['monthly','annual','paid','due']}
         rows[apt]['monthlyPayments'] = r.get('monthlyPayments',[])
+        rows[apt]['monthlyReceipts'] = r.get('monthlyReceipts',[])
         rows[apt]['year'] = int(data.get('year',2026))
         rows[apt]['support'] = data.get('support',[])
     for ev in (data.get('evTable') or {}).get('residents',[]):

@@ -40,6 +40,77 @@ class ResidentFeatureTests(unittest.TestCase):
         tenant=self.request('/api/preview',{'apt':1,'role':'tenant'},cookie=self.session('owner@example.com'))
         self.assertIn(b'Owner specific',owner['body']);self.assertNotIn(b'Tenant specific',owner['body']);self.assertNotIn(b'Other apartment',owner['body'])
         self.assertIn(b'Tenant specific',tenant['body']);self.assertNotIn(b'Owner specific',tenant['body'])
+    def test_dashboard_token_is_owner_bound_origin_bound_scoped_and_logout_revoked(self):
+        import server
+        self.make_admin();cookie=self.session('owner@example.com')
+        issued=self.request('/api/admin/dashboard-session',{},cookie=cookie);token=json.loads(issued['body'])['token'];authorization='Bearer '+token
+        allowed=self.request('/api/admin/context',origin=server.DASHBOARD_ORIGIN,authorization=authorization)
+        self.assertTrue(allowed['status'].startswith('200'));self.assertEqual(allowed['headers']['Access-Control-Allow-Origin'],server.DASHBOARD_ORIGIN)
+        self.assertNotIn('Access-Control-Allow-Credentials',allowed['headers'])
+        for path in ('/api/apartments','/api/preview','/api/admin/dashboard-session'):
+            self.assertTrue(self.request(path,{},origin=server.DASHBOARD_ORIGIN,authorization=authorization)['status'].startswith('403'))
+        self.assertTrue(self.request('/api/admin/context',authorization=authorization)['status'].startswith('403'))
+        self.assertTrue(self.request('/api/admin/context',origin=server.DASHBOARD_ORIGIN,cookie=cookie)['status'].startswith('403'))
+        self.request('/api/logout',{},cookie=cookie)
+        self.assertTrue(self.request('/api/admin/context',origin=server.DASHBOARD_ORIGIN,authorization=authorization)['status'].startswith('401'))
+    def test_dashboard_token_cannot_be_issued_to_another_resident(self):
+        self.assertTrue(self.request('/api/admin/dashboard-session',{},cookie=self.session('other@example.com'))['status'].startswith('403'))
+        import server
+        self.assertTrue(self.request('/api/admin/context',method='OPTIONS',origin=server.DASHBOARD_ORIGIN)['status'].startswith('200'))
+        self.assertTrue(self.request('/api/admin/context',method='OPTIONS',origin='https://untrusted.example')['status'].startswith('403'))
+        self.assertTrue(self.request('/api/send-code',{'email':'owner@example.com'},origin=server.DASHBOARD_ORIGIN)['status'].startswith('403'))
+    def test_committee_view_sees_both_role_notices_but_only_selected_apartment(self):
+        self.make_admin();self.save(apt=1,audience='owner',body='Owner notice');self.save(apt=1,audience='tenant',body='Tenant notice');self.save(apt=2,body='Other unit notice')
+        result=self.request('/api/preview',{'apt':1,'role':'committee'},cookie=self.session('owner@example.com'))
+        self.assertIn(b'Owner notice',result['body']);self.assertIn(b'Tenant notice',result['body']);self.assertNotIn(b'Other unit notice',result['body'])
+        self.assertTrue(self.request('/api/preview',{'apt':1,'role':'committee'},cookie=self.session('other@example.com'))['status'].startswith('403'))
+    def test_delete_hides_notice_and_restore_is_draft_without_email(self):
+        self.make_admin();saved=json.loads(self.save(apt=1)['body']);calls=self.mailer.call_count
+        cookie=self.session('owner@example.com');payload={'id':saved['id'],'version':1}
+        self.assertTrue(self.request('/api/admin/notices/delete',payload,cookie=self.session('tenant@example.com'))['status'].startswith('403'))
+        self.assertTrue(self.request('/api/admin/notices/delete',payload,cookie=cookie)['status'].startswith('200'))
+        self.assertNotIn(b'Private targeted text',self.request('/api/apartments',cookie=self.session('tenant@example.com'))['body'])
+        self.assertEqual(json.loads(self.request('/api/admin/notices',cookie=cookie)['body'])['notices'],[])
+        archived=json.loads(self.request('/api/admin/notices/deleted',cookie=cookie)['body'])['notices'][0]
+        self.assertTrue(self.request('/api/admin/notices/restore',{'id':archived['id'],'version':archived['version']},cookie=cookie)['status'].startswith('200'))
+        row=self.c.execute('SELECT active FROM notices WHERE id=?',(saved['id'],)).fetchone();self.assertEqual(row['active'],0);self.assertEqual(self.mailer.call_count,calls)
+    def test_attachments_require_exact_notice_apartment_role_and_active_membership(self):
+        import base64
+        self.make_admin();cookie=self.session('owner@example.com')
+        data={'filename':'example.pdf','data':base64.b64encode(b'%PDF-1.4\nexample').decode()}
+        uploaded=self.request('/api/admin/attachments/upload',data,cookie=cookie);attachment=json.loads(uploaded['body']);self.assertIn('id',attachment)
+        body={'apt':1,'audience':'owner','kind':'message','title':'With file','body':'Attachment body','active':1,'attachments':[attachment['id']]}
+        saved=self.request('/api/admin/notices',body,cookie=cookie);self.assertTrue(saved['status'].startswith('200'))
+        path='/api/attachments/'+attachment['id']
+        self.assertTrue(self.request(path,cookie=cookie)['status'].startswith('200'))
+        self.assertTrue(self.request(path,cookie=self.session('tenant@example.com'))['status'].startswith('404'))
+        self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('404'))
+        notice=dict(self.c.execute('SELECT * FROM notices WHERE id=?',(json.loads(saved['body'])['id'],)).fetchone());notice['audience']='all';notice['attachments']=[attachment['id']]
+        self.request('/api/admin/notices',notice,cookie=cookie)
+        self.assertTrue(self.request(path,cookie=self.session('tenant@example.com'))['status'].startswith('200'))
+        self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('404'))
+        self.c.execute("UPDATE email_memberships SET active=0 WHERE email='tenant@example.com'");self.c.commit()
+        self.assertTrue(self.request(path,cookie=self.session('tenant@example.com'))['status'].startswith('401'))
+    def test_global_attachment_archive_and_rebinding_guards(self):
+        import base64,server
+        self.make_admin();cookie=self.session('owner@example.com')
+        item=json.loads(self.request('/api/admin/attachments/upload',{'filename':'safe.txt','data':base64.b64encode(b'Example file').decode()},cookie=cookie)['body'])
+        notice=json.loads(self.save(attachments=[item['id']])['body']);path='/api/attachments/'+item['id']
+        self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('200'))
+        self.assertTrue(self.save(attachments=[item['id']])['status'].startswith('400'))
+        self.assertTrue(self.save(attachments=[{}])['status'].startswith('400'))
+        token=json.loads(self.request('/api/admin/dashboard-session',{},cookie=cookie)['body'])['token']
+        download=self.request('/api/admin/attachments/'+item['id'],origin=server.DASHBOARD_ORIGIN,authorization='Bearer '+token)
+        self.assertEqual(download['body'],b'Example file')
+        self.request('/api/admin/notices/delete',{'id':notice['id'],'version':1},cookie=cookie)
+        self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('404'))
+
+    def test_unsafe_attachment_types_and_resident_upload_are_rejected(self):
+        import base64
+        self.make_admin();data={'filename':'bad.html','data':base64.b64encode(b'<html>active content</html>').decode()}
+        self.assertTrue(self.request('/api/admin/attachments/upload',data,cookie=self.session('owner@example.com'))['status'].startswith('400'))
+        data['filename']='bad.png';self.assertTrue(self.request('/api/admin/attachments/upload',data,cookie=self.session('owner@example.com'))['status'].startswith('400'))
+        self.assertTrue(self.request('/api/admin/attachments/upload',data,cookie=self.session('tenant@example.com'))['status'].startswith('403'))
     def make_admin(self):
         self.c.execute('INSERT INTO committee_account VALUES(1,?)',('owner@example.com',));self.c.execute('INSERT INTO administrators VALUES(?,1)',('owner@example.com',));self.c.commit()
     def save(self,**kw):

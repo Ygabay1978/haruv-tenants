@@ -65,3 +65,11 @@ Resident-view troubleshooting uses a separate, read-only `resident_viewers` gran
 Committee capabilities are also bound to a single private `committee_account` identity. Extra admin/viewer rows do not authorize another account. Normal resident requests remain scoped to the signed-in resident's active apartment memberships.
 
 Publishing a new or changed active notice queues a durable email attempt. Recipients come from distinct active email memberships matching the apartment and owner/tenant audience. The email includes the title and a normal portal sign-in link; the full notice remains behind authentication. Brevo message versions keep recipient addresses private, and each batch has a stable idempotency UUID. Saving unchanged text or hiding a notice sends no email. Admins see provider acceptance, missing recipients, definite failure, or uncertain status. Only pending/definitely failed attempts can be retried; unknown outcomes are not automatically resent. Tests never send real emails.
+
+
+## Inline committee management and private attachments
+The owner-private committee Site manages notices inline using a short-lived, memory-only bearer authorization obtained through a first-party portal popup. Both the exact dashboard origin and the singleton committee account are checked on every request; the grant expires with its parent login and permits only administration endpoints. No resident is granted committee access.
+
+Notices support recoverable deletion and restoration as unpublished drafts. Attachments are stored in the private database, never in this repository. Up to five files per notice, 5 MB each and 15 MB total: JPEG/PNG/WebP, PDF, UTF-8 text, or non-macro Office documents. Download authorization checks active membership, apartment, audience and notice visibility. Draft, deleted and unrelated notices are unavailable to residents.
+
+Apartment cards switch immediately for the committee, show explicit EV ownership, compact payment rows with EV charges where applicable, and a receipt-number column. Receipt values remain blank until supplied through monthlyReceipts; receipt generation is not implemented.

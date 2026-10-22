@@ -10,13 +10,13 @@ class IsolationTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.old=server.DB;server.DB=str(Path(self.temp.name)/'db');server.ORIGIN='https://portal.test'
         self.c=server.connect()
         with self.c:
-            for table in ['committee_account','notice_notifications','resident_viewers','notices','administrators','presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
+            for table in ['notice_attachments','dashboard_sessions','notice_archives','committee_account','notice_notifications','resident_viewers','notices','administrators','presentation','email_challenges','email_sessions','memberships','sessions','attempts','email_memberships','apartments','summary']: self.c.execute('DELETE FROM '+table)
         self.c.executemany('INSERT INTO apartments VALUES(?,?)',[(1,'{"paid":100,"owners":["Owner One"],"tenants":["Tenant One"],"access":{"gym":"Gym One","pal":"PAL One"}}'),(2,'{"paid":98765,"owners":["Private Other Owner"],"access":{"pal":"Private Other PAL"}}')])
         self.c.executemany('INSERT INTO email_memberships VALUES(?,?,?,1)',[('owner@example.com',1,'owner'),('tenant@example.com',1,'tenant'),('other@example.com',2,'owner')]);self.c.commit()
     def tearDown(self):self.c.close();server.DB=self.old;self.temp.cleanup();self.env_patch.stop()
-    def request(self,path,body=None,cookie='',origin='https://portal.test'):
+    def request(self,path,body=None,cookie='',origin='https://portal.test',authorization='',method=None):
         raw=json.dumps(body).encode() if body is not None else b'';out={}
-        env={'PATH_INFO':path,'REQUEST_METHOD':'POST' if body is not None else 'GET','HTTP_ORIGIN':origin,'CONTENT_LENGTH':str(len(raw)),'wsgi.input':io.BytesIO(raw),'HTTP_COOKIE':cookie}
+        env={'PATH_INFO':path,'REQUEST_METHOD':method or ('POST' if body is not None else 'GET'),'HTTP_ORIGIN':origin,'CONTENT_LENGTH':str(len(raw)),'wsgi.input':io.BytesIO(raw),'HTTP_COOKIE':cookie,'HTTP_AUTHORIZATION':authorization}
         def start(status,headers):out.update(status=status,headers=dict(headers))
         out['body']=b''.join(server.app(env,start));return out
     def session(self,phone):
