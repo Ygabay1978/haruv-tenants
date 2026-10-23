@@ -24,8 +24,8 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - name: SQLite tests
-        run: python -m unittest -v test_security.py test_storage.py test_resident_features.py test_monitoring.py
+        run: python -m unittest -v test_security.py test_storage.py test_resident_features.py test_monitoring.py test_directory_services.py
       - name: PostgreSQL tests
         env:
           TEST_DATABASE_URL: postgresql://postgres:disposable-test-only@localhost:5432/portal_test?sslmode=disable
-        run: python -m unittest -v test_security.py test_storage.py test_resident_features.py test_monitoring.py
+        run: python -m unittest -v test_security.py test_storage.py test_resident_features.py test_monitoring.py test_directory_services.py

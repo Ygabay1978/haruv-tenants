@@ -11,7 +11,7 @@ DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
-import tenant_summary, portal_rules, notice_mail, attachments, telemetry
+import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services
 
 def connect():
     return storage.connect(DB)
@@ -188,7 +188,7 @@ def app(env, start):
         return respond({'error':'בקשה לא מורשית'},'403 Forbidden')
     try:
         n = int(env.get('CONTENT_LENGTH') or 0)
-        if n < 0 or n > (7500000 if path=='/api/admin/attachments/upload' else 20000): raise ValueError()
+        if n < 0 or n > (7500000 if path=='/api/admin/attachments/upload' else 250000 if path=='/api/admin/directory/import' else 20000): raise ValueError()
         body = json.loads(env['wsgi.input'].read(n) or b'{}') if method=='POST' else {}
         if not isinstance(body,dict): raise ValueError()
     except (ValueError,TypeError): return respond({'error':'בקשה לא תקינה'},'400 Bad Request')
@@ -250,6 +250,8 @@ def app(env, start):
             session = c.execute('SELECT email,expires FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
         if not session or not allowed(c,session['email']):return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
         p=session['email']
+        if path=='/api/services' and method=='GET':
+            return respond({'disclaimer':services.DISCLAIMER,'providers':[dict(r) for r in c.execute('SELECT id,name,category,phone,url,notes FROM service_providers WHERE active=1 ORDER BY category,name').fetchall()]})
         if path=='/api/usage' and method=='POST':
             page=body.get('page');apt=body.get('apt')
             if page not in (*telemetry.PAGES,'active') or (apt is not None and type(apt) is not int):return respond({'error':'אירוע לא תקין'},'400 Bad Request')
@@ -293,6 +295,24 @@ def app(env, start):
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/services' and method=='GET':
+                return respond({'providers':[dict(r) for r in c.execute('SELECT * FROM service_providers ORDER BY active DESC,category,name').fetchall()]})
+            if path=='/api/admin/services' and method=='POST':
+                try:values=services.values(body)
+                except ValueError:return respond({'error':'יש להשלים שם, תחום ופרטים תקינים'},'400 Bad Request')
+                ident=body.get('id');version=body.get('version');stamp=int(time.time())
+                if ident:
+                    if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int:return respond({'error':'פרטי רשומה לא תקינים'},'400 Bad Request')
+                    with c.transaction(lock='service:'+ident):
+                        row=c.execute('SELECT version FROM service_providers WHERE id=?',(ident,)).fetchone()
+                        if not row or row['version']!=version:return respond({'error':'הרשומה השתנתה; יש לרענן'},'409 Conflict')
+                        c.execute('UPDATE service_providers SET name=?,category=?,phone=?,url=?,notes=?,active=?,version=version+1,updated=? WHERE id=?',(*values,stamp,ident))
+                else:
+                    ident=secrets.token_hex(16);c.execute('INSERT INTO service_providers VALUES(?,?,?,?,?,?,?,1,?)',(ident,*values,stamp));c.commit()
+                return respond({'ok':True})
+            if path=='/api/admin/directory/import' and method=='POST':
+                try:return respond(directory_update.apply(c,body.get('directory'),email))
+                except (ValueError,TypeError):return respond({'error':'עדכון המאגר לא בוצע. בדקו שמות, מיילים ודירות ושמרו את גישת הוועד'},'400 Bad Request')
             if path=='/api/admin/monitoring' and method=='POST':
                 days=body.get('days',30);include=body.get('includeCommittee',False)
                 if type(days) is not int or days not in (1,7,30,90) or type(include) is not bool:return respond({'error':'תקופה לא תקינה'},'400 Bad Request')

@@ -3,7 +3,7 @@ import hashlib,json,time,secrets,logging
 from collections import Counter,defaultdict
 from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
-PAGES={'apartment':'הדירה שלי','payments':'תשלומים','building_summary':'תמונת מצב הבניין','gym':'חדר כושר','gym_booking':'קביעת תור לחדר כושר','pal':'PAL','attachments':'מסמכים ותמונות'}
+PAGES={'services':'בעלי מקצוע ונותני שירותים','apartment':'הדירה שלי','payments':'תשלומים','building_summary':'תמונת מצב הבניין','gym':'חדר כושר','gym_booking':'קביעת תור לחדר כושר','pal':'PAL','attachments':'מסמכים ותמונות'}
 TZ=ZoneInfo('Asia/Jerusalem')
 RETENTION=90*86400
 

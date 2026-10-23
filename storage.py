@@ -2,8 +2,10 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state')
+TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers')
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS service_providers(id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,phone TEXT NOT NULL,url TEXT NOT NULL,notes TEXT NOT NULL,active INTEGER NOT NULL,version INTEGER NOT NULL,updated BIGINT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS monitoring_state(id INTEGER PRIMARY KEY CHECK(id=1),started BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS usage_events(id TEXT PRIMARY KEY,email TEXT NOT NULL,event TEXT NOT NULL,page TEXT NOT NULL,apt INTEGER,at BIGINT NOT NULL,session_key TEXT NOT NULL,platform TEXT NOT NULL,browser TEXT NOT NULL,schema_version INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS usage_time ON usage_events(at);

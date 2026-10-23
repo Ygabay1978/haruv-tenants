@@ -9,7 +9,7 @@ const usageObserver=new IntersectionObserver(entries=>{for(const entry of entrie
 for(const event of ['pointerdown','keydown','touchstart','scroll'])document.addEventListener(event,()=>lastInteraction=Date.now(),{passive:true});
 setInterval(()=>{if(document.visibilityState==='visible'&&Date.now()-lastInteraction<5*60000)trackUsage('active')},60000);
 function observeUsage(el,page,apt){el.dataset.usagePage=page;if(apt!==null&&apt!==undefined)el.dataset.usageApt=apt;usageObserver.observe(el)}
-function clear(){usageObserver.disconnect();usageSeen.clear();usageApt=null;usagePreview=false;previewSelection=null;viewerContextLoaded=false;$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
+function clear(){usageObserver.disconnect();usageSeen.clear();servicesLoaded=false;activePortalTab='apartment';for(const key of ['apartment','building','services']){$(key+'-pane').hidden=key!=='apartment';document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key==='apartment'))}usageApt=null;usagePreview=false;previewSelection=null;viewerContextLoaded=false;$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('services-list').replaceChildren();$('services-disclaimer').textContent='';$('login').hidden=false;$('code').value=''; }
 function people(data,box){
   if(!Array.isArray(data.owners)&&!Array.isArray(data.tenants)) return;
   const group=document.createElement('div');group.className='people';
@@ -34,25 +34,7 @@ function people(data,box){
 }
 function accessButtons(data,apt,box){
   const group=document.createElement('div');group.className='access-buttons';
-  for(const [label,key,icon] of [['חדר כושר','gym','◇'],['PAL','pal','↗']]){
-    const known=data.access&&typeof data.access[key]==='string';
-    const names=known?data.access[key]:'';
-    const button=document.createElement('button');button.type='button';button.className='access-button';
-    const mark=text('span',icon,button);mark.className='access-icon';mark.setAttribute('aria-hidden','true');
-    const copy=document.createElement('span');copy.className='access-copy';text('strong',label,copy);
-    text('small',known?(names?'הרשאה רשומה':'לא רשומה הרשאה'):'פרטי ההרשאה טרם נטענו',copy);button.appendChild(copy);
-    const arrow=text('span','←',button);arrow.className='access-arrow';arrow.setAttribute('aria-hidden','true');
-    button.setAttribute('aria-haspopup','dialog');
-    button.onclick=()=>{
-      trackUsage(key,apt);
-      $('access-title').textContent=label+' · דירה '+apt;
-      const detail=$('access-detail');detail.replaceChildren();
-      text('p',names?'השמות הרשומים במאגר ההרשאות:':known?'לא רשומה הרשאה לדירה זו במאגר. לבירור ולעדכון פנו לוועד הבית.':'פרטי ההרשאה טרם נטענו. פנו לוועד הבית.',detail);
-      if(names){const line=text('div',names,detail);line.className='permission-names'}
-      $('access-dialog').showModal();
-    };
-    group.appendChild(button);
-  }
+  for(const [label,key] of [['חדר כושר','gym'],['PAL','pal']]){const cell=document.createElement('section');cell.className='access-inline';text('h3',label,cell);const names=data.access&&typeof data.access[key]==='string'?data.access[key].trim():'';text('div',names||'לא רשומה הרשאה',cell).className='access-names';group.appendChild(cell)}
   box.appendChild(group);
   if(data.access&&typeof data.access.gym==='string'&&data.access.gym.trim()){const booking=text('a','קביעת תור לאימון בחד״כ',box);booking.href='https://calendly.com/gym-zait10';booking.target='_blank';booking.rel='noopener noreferrer';booking.className='gym-booking';booking.onclick=()=>trackUsage('gym_booking',apt)}
 }
@@ -122,7 +104,7 @@ async function load(){
     table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(a.data.electricVehicle,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
   }
   if(!$('summary').getAttribute('src'))$('summary').src='/api/summary';
-  document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;observeUsage($('summary'),'building_summary',null);message('')
+  document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;observeUsage($('summary'),'building_summary',null);if(activePortalTab==='services')showServices().catch(e=>message(e.message,true));message('')
 }
 async function busy(form,action){const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);try{await action()}catch(e){message(e.message,true)}finally{buttons.forEach(b=>b.disabled=false)}}
 async function selectApartment(){
@@ -140,3 +122,8 @@ load().catch(()=>clear());
 setInterval(async()=>{if(!$('portal').hidden){try{await load()}catch(e){clear();message('יש להתחבר מחדש',true)}}},60000);
 
 document.querySelectorAll('.building-photo').forEach(img=>img.addEventListener('error',()=>{img.hidden=true}));
+
+let activePortalTab='apartment',servicesLoaded=false;
+async function showServices(){const data=await api('/api/services');$('services-disclaimer').textContent=data.disclaimer;const list=$('services-list');list.replaceChildren();if(!data.providers.length)text('p','בעלי מקצוע ונותני שירותים יופיעו כאן לאחר שהוועד יוסיף את פרטיהם.',list);for(const p of data.providers){const card=document.createElement('article');card.className='service-card';text('small',p.category,card);text('h3',p.name,card);if(p.phone){const phone=text('a',p.phone,card);phone.href='tel:'+p.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';phone.className='service-phone'}if(p.url){const link=text('a','פתיחת אתר ↗',card);link.href=p.url;link.target='_blank';link.rel='noopener noreferrer'}if(p.notes)text('p',p.notes,card);list.appendChild(card)}servicesLoaded=true}
+async function selectPortalTab(tab){activePortalTab=tab;for(const key of ['apartment','building','services']){$(key+'-pane').hidden=key!==tab;document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key===tab))}if(tab==='services'){try{await showServices();trackUsage('services',null)}catch(e){message(e.message,true)}}else if(tab==='building')observeUsage($('summary'),'building_summary',null)}
+document.querySelectorAll('[data-portal-tab]').forEach(button=>button.onclick=()=>selectPortalTab(button.dataset.portalTab));
