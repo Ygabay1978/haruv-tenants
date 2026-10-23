@@ -11,7 +11,7 @@ DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
-import tenant_summary, portal_rules, notice_mail, attachments
+import tenant_summary, portal_rules, notice_mail, attachments, telemetry
 
 def connect():
     return storage.connect(DB)
@@ -211,8 +211,10 @@ def app(env, start):
                                   (p,otp_digest(p,nonce,code),nonce,int(time.time())+600))
                     try:
                         send_email(p,code)
+                        telemetry.record(c,p,'otp_accepted',env=env)
                         c.execute('UPDATE email_challenges SET ready=1 WHERE email=? AND nonce=?',(p,nonce));c.commit()
                     except Exception:
+                        telemetry.record(c,p,'otp_failed',env=env)
                         c.execute('DELETE FROM email_challenges WHERE email=? AND nonce=?',(p,nonce));c.commit()
                         # Same public response prevents account enumeration on delivery errors.
                 else:
@@ -230,6 +232,7 @@ def app(env, start):
                     c.execute('DELETE FROM email_sessions WHERE expires<?',(int(time.time()),))
                     c.execute('INSERT INTO email_sessions VALUES(?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),p,int(time.time())+3600))
             if not valid: return respond({'error':'הקוד או פרטי הגישה אינם תקינים'},'401 Unauthorized')
+            telemetry.record(c,p,'login',digest=hashlib.sha256(token.encode()).hexdigest(),env=env)
             return respond({'ok':True},extra=[('Set-Cookie',f'__Host-session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=3600')])
         authorization=env.get('HTTP_AUTHORIZATION','')
         dashboard_auth=bool(authorization) or env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN
@@ -247,7 +250,18 @@ def app(env, start):
             session = c.execute('SELECT email,expires FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
         if not session or not allowed(c,session['email']):return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
         p=session['email']
+        if path=='/api/usage' and method=='POST':
+            page=body.get('page');apt=body.get('apt')
+            if page not in (*telemetry.PAGES,'active') or (apt is not None and type(apt) is not int):return respond({'error':'אירוע לא תקין'},'400 Bad Request')
+            if apt is not None and not c.execute('SELECT 1 FROM email_memberships WHERE email=? AND apt=? AND active=1',(p,apt)).fetchone():return respond({'error':'גישה לדירה אינה מורשית'},'403 Forbidden')
+            event='active' if page=='active' else 'view';stamp=int(time.time());key=telemetry.session_key(digest)
+            recent=c.execute('SELECT 1 FROM usage_events WHERE session_key=? AND page=? AND COALESCE(apt,0)=? AND at>?',(key,page,apt or 0,stamp-(55 if event=='active' else 30))).fetchone()
+            if recent:return respond({'ok':True,'recorded':False})
+            if not limit(c,'usage:'+key,180,3600):return respond({'error':'נא להמתין'},'429 Too Many Requests')
+            telemetry.record(c,p,event,page,apt,digest,env)
+            return respond({'ok':True})
         if path == '/api/logout' and method=='POST':
+            telemetry.record(c,p,'logout',digest=digest,env=env)
             c.execute('DELETE FROM email_sessions WHERE digest=?',(digest,)); c.commit()
             return respond({'ok':True},extra=[('Set-Cookie','__Host-session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0')])
         if (path.startswith('/api/attachments/') or path.startswith('/api/admin/attachments/')) and method=='GET':
@@ -261,6 +275,7 @@ def app(env, start):
                 own=c.execute('SELECT DISTINCT apt FROM email_memberships WHERE email=? AND active=1',(p,)).fetchall()
                 permitted=any(any(n['id']==file['notice_id'] for n in resident_notices(c,p,a['apt'])) for a in own)
             if not permitted:return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
+            if download:telemetry.record(c,p,'download','attachments',digest=digest,env=env)
             disposition='inline' if not download and (file['mime'].startswith('image/') or file['mime']=='application/pdf') else 'attachment'
             return respond(base64.b64decode(file['data']),kind=file['mime'],extra=[('Content-Disposition',disposition+"; filename*=UTF-8''"+quote(file['filename'])),('Content-Security-Policy',"default-src 'none'; sandbox")])
         if path in ('/api/viewer/context','/api/preview'):
@@ -278,6 +293,10 @@ def app(env, start):
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/monitoring' and method=='POST':
+                days=body.get('days',30);include=body.get('includeCommittee',False)
+                if type(days) is not int or days not in (1,7,30,90) or type(include) is not bool:return respond({'error':'תקופה לא תקינה'},'400 Bad Request')
+                return respond(telemetry.report(c,days,include))
             if path=='/api/admin/attachments/upload' and method=='POST':
                 if not limit(c,'attachment-upload:'+p,40,3600):return respond({'error':'נא להמתין לפני העלאת קבצים נוספים'},'429 Too Many Requests')
                 try:name,mime,raw=attachments.decode(body)

@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd -u 10001 portal && mkdir /data && chown portal /data
-COPY server.py storage.py import_data.py tenant_summary.py portal_rules.py notice_mail.py attachments.py ./
+COPY server.py storage.py import_data.py tenant_summary.py portal_rules.py notice_mail.py attachments.py telemetry.py ./
 COPY static ./static
 USER portal
 ENV PORT=8080 PORTAL_DB=/data/portal.sqlite3

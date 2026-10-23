@@ -3,7 +3,13 @@ const money=x=>new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',mi
 async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});let data=await r.json();if(!r.ok){const error=new Error(data.error||'אירעה שגיאה');error.status=r.status;throw error}return data}
 function message(text,error=false){$('message').textContent=text;$('message').className=error?'error':''}
 function text(tag,value,parent){const e=document.createElement(tag);e.textContent=value;parent.appendChild(e);return e}
-function clear(){previewSelection=null;viewerContextLoaded=false;$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
+let usagePreview=false,usageApt=null,lastInteraction=Date.now();const usageSeen=new Set();
+function trackUsage(page,apt=usageApt){if(usagePreview||$('portal').hidden)return;api('/api/usage',{page,apt}).catch(()=>{})}
+const usageObserver=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;const el=entry.target,key=el.dataset.usagePage+':'+(el.dataset.usageApt||'');if(!usageSeen.has(key)){usageSeen.add(key);trackUsage(el.dataset.usagePage,el.dataset.usageApt?Number(el.dataset.usageApt):null)}usageObserver.unobserve(el)}},{threshold:.1});
+for(const event of ['pointerdown','keydown','touchstart','scroll'])document.addEventListener(event,()=>lastInteraction=Date.now(),{passive:true});
+setInterval(()=>{if(document.visibilityState==='visible'&&Date.now()-lastInteraction<5*60000)trackUsage('active')},60000);
+function observeUsage(el,page,apt){el.dataset.usagePage=page;if(apt!==null&&apt!==undefined)el.dataset.usageApt=apt;usageObserver.observe(el)}
+function clear(){usageObserver.disconnect();usageSeen.clear();usageApt=null;usagePreview=false;previewSelection=null;viewerContextLoaded=false;$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('login').hidden=false;$('code').value=''; }
 function people(data,box){
   if(!Array.isArray(data.owners)&&!Array.isArray(data.tenants)) return;
   const group=document.createElement('div');group.className='people';
@@ -38,6 +44,7 @@ function accessButtons(data,apt,box){
     const arrow=text('span','←',button);arrow.className='access-arrow';arrow.setAttribute('aria-hidden','true');
     button.setAttribute('aria-haspopup','dialog');
     button.onclick=()=>{
+      trackUsage(key,apt);
       $('access-title').textContent=label+' · דירה '+apt;
       const detail=$('access-detail');detail.replaceChildren();
       text('p',names?'השמות הרשומים במאגר ההרשאות:':known?'לא רשומה הרשאה לדירה זו במאגר. לבירור ולעדכון פנו לוועד הבית.':'פרטי ההרשאה טרם נטענו. פנו לוועד הבית.',detail);
@@ -47,6 +54,7 @@ function accessButtons(data,apt,box){
     group.appendChild(button);
   }
   box.appendChild(group);
+  if(data.access&&typeof data.access.gym==='string'&&data.access.gym.trim()){const booking=text('a','קביעת תור לאימון בחד״כ',box);booking.href='https://calendly.com/gym-zait10';booking.target='_blank';booking.rel='noopener noreferrer';booking.className='gym-booking';booking.onclick=()=>trackUsage('gym_booking',apt)}
 }
 const monthsHE=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 function unitDetails(data,box){
@@ -59,7 +67,7 @@ function unitDetails(data,box){
 function notices(items,box){
   if(!items||!items.length)return;
   const section=document.createElement('section');section.className='notices';text('h3','עדכונים מוועד הבית',section);
-  for(const n of items){const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card)}box.appendChild(section);
+  for(const n of items){const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';link.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card)}box.appendChild(section);
 }
 function collectionWarning(data,box){
   const c=data.collection;if(!c||!c.level)return;
@@ -83,12 +91,13 @@ function help(contacts){
 }
 async function load(){
   const result=previewSelection?await api('/api/preview',previewSelection):await api('/api/apartments');if(/^[a-f0-9]{32}$/.test(new URLSearchParams(location.search).get('dashboard')||'')){location.replace('/dashboard-connect?state='+new URLSearchParams(location.search).get('dashboard'));return}if(new URLSearchParams(location.search).get('admin')==='1'){const apt=new URLSearchParams(location.search).get('apt');location.replace('/admin'+(/^[0-9]{1,3}$/.test(apt||'')?'?apt='+apt:'')+(['note','message'].includes(new URLSearchParams(location.search).get('kind'))?(/^[0-9]{1,3}$/.test(apt||'')?'&':'?')+'kind='+new URLSearchParams(location.search).get('kind'):''));return}$('apartments').replaceChildren();
+  usagePreview=!!result.preview;usageApt=usagePreview?null:result.apartments[0]?.apt??null;usageObserver.disconnect();
   help(result.apartments[0]?.data.support||[]);
   $('viewer-controls').hidden=!result.canPreview;
   if(result.canPreview&&!viewerContextLoaded){const context=await api('/api/viewer/context');const select=$('viewer-apt');select.replaceChildren();for(const a of context.apartments){const option=text('option','דירה '+a.apt+' · '+[...a.owners,...a.tenants].join(' / '),select);option.value=a.apt}viewerContextLoaded=true;const own=result.apartments[0];if(own)select.value=own.apt}
   $('viewer-status').textContent=result.preview?'תצוגה מקדימה בלבד · דירה '+result.preview.apt+' · '+({owner:'בעל/ת דירה',tenant:'שוכר/ת',committee:'ועד הבית — כרטיס מלא'}[result.preview.role]):'';
   for(const a of result.apartments){
-    const box=document.createElement('article');box.className='apartment';
+    const box=document.createElement('article');box.className='apartment';box.dataset.apt=a.apt;
     const top=document.createElement('div');top.className='apartment-top';
     text('h2','דירה '+a.apt,top);
     const role=text('span',a.roles.map(r=>({owner:'בעל/ת דירה',tenant:'שוכר/ת',committee:'ועד הבית — צפייה בדירה'}[r]||r)).join(' · '),top);role.className='role-tag';box.appendChild(top);
@@ -110,10 +119,10 @@ async function load(){
       if(ev){const value=(ev.months||[])[i];const cell=text('td','',r);text('bdi',value===null||value===undefined?'—':money(value),cell).dir='rtl';if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';cell.classList.add('ev-payment')}const note=(ev.monthNotes||[])[i];if(note){cell.classList.add('ev-payment');const consumption=text('bdi',note,cell);consumption.dir='rtl';consumption.className='ev-consumption'}}
       const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';body.appendChild(r)
     });
-    table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);evDetails(a.data.electricVehicle,box);$('apartments').appendChild(box)
+    table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(a.data.electricVehicle,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
   }
   if(!$('summary').getAttribute('src'))$('summary').src='/api/summary';
-  document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;message('')
+  document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;observeUsage($('summary'),'building_summary',null);message('')
 }
 async function busy(form,action){const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);try{await action()}catch(e){message(e.message,true)}finally{buttons.forEach(b=>b.disabled=false)}}
 async function selectApartment(){
