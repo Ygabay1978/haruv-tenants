@@ -40,6 +40,21 @@ class ResidentFeatureTests(unittest.TestCase):
         tenant=self.request('/api/preview',{'apt':1,'role':'tenant'},cookie=self.session('owner@example.com'))
         self.assertIn(b'Owner specific',owner['body']);self.assertNotIn(b'Tenant specific',owner['body']);self.assertNotIn(b'Other apartment',owner['body'])
         self.assertIn(b'Tenant specific',tenant['body']);self.assertNotIn(b'Owner specific',tenant['body'])
+    def test_owner_only_apartment_has_no_tenant_preview(self):
+        self.make_admin();cookie=self.session('owner@example.com')
+        context=json.loads(self.request('/api/viewer/context',cookie=cookie)['body'])
+        roles={a['apt']:a['availableRoles'] for a in context['apartments']}
+        self.assertEqual(roles[1],['committee','owner','tenant'])
+        self.assertEqual(roles[2],['committee','owner'])
+        denied=self.request('/api/preview',{'apt':2,'role':'tenant'},cookie=cookie)
+        self.assertTrue(denied['status'].startswith('400'))
+        self.assertNotIn(b'Private Other Owner',denied['body'])
+        for role in ('owner','committee'):
+            self.assertTrue(self.request('/api/preview',{'apt':2,'role':role},cookie=cookie)['status'].startswith('200'))
+        self.c.execute('UPDATE apartments SET payload=? WHERE apt=1',(json.dumps({'owners':['Owner One'],'tenants':['','-','אין'],'tenantContacts':[]}),));self.c.commit()
+        self.assertTrue(self.request('/api/preview',{'apt':1,'role':'tenant'},cookie=cookie)['status'].startswith('400'))
+        self.c.execute('UPDATE apartments SET payload=? WHERE apt=1',(json.dumps({'owners':['Owner One'],'tenantContacts':[{'name':'Registered Tenant'}]}),));self.c.commit()
+        self.assertTrue(self.request('/api/preview',{'apt':1,'role':'tenant'},cookie=cookie)['status'].startswith('200'))
     def test_dashboard_token_is_owner_bound_origin_bound_scoped_and_logout_revoked(self):
         import server
         self.make_admin();cookie=self.session('owner@example.com')

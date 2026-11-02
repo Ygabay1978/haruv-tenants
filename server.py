@@ -129,6 +129,13 @@ def is_admin(c,address):
 def can_preview(c,address):
     return is_admin(c,address) or c.execute('SELECT 1 FROM resident_viewers v JOIN committee_account o ON o.email=v.email AND o.id=1 WHERE v.email=? AND v.active=1',(address,)).fetchone() is not None
 
+def preview_roles(payload):
+    data=json.loads(payload) if isinstance(payload,str) else payload
+    names=data.get('tenants',[])
+    contacts=data.get('tenantContacts',[])
+    has_tenants=(isinstance(names,list) and any(isinstance(name,str) and name.strip() not in ('','-','אין') for name in names)) or (isinstance(contacts,list) and any(isinstance(contact,dict) and isinstance(contact.get('name'),str) and contact['name'].strip() not in ('','-','אין') for contact in contacts))
+    return ['committee','owner']+(['tenant'] if has_tenants else [])
+
 def resident_notices(c,address,apt):
     return [dict(r,attachments=attachments.list_for(c,r['id'])) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
@@ -284,12 +291,13 @@ def app(env, start):
             if not can_preview(c,p):return respond({'error':'צפייה זו זמינה לוועד בלבד'},'403 Forbidden')
             if path=='/api/viewer/context' and method=='GET':
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
-                return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
+                return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[]),'availableRoles':preview_roles(r['payload'])} for r in rows]})
             if path=='/api/preview' and method=='POST':
                 apt=body.get('apt');role=body.get('role')
                 if type(apt) is not int or role not in ('owner','tenant','committee'):return respond({'error':'יש לבחור דירה וסוג דייר'},'400 Bad Request')
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
+                if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
                 notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.resident_payload(row['payload']),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
