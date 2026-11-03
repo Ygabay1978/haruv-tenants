@@ -54,3 +54,7 @@ details.login-help{display:block;text-align:right;color:var(--ink);margin:20px 0
 details.login-help::before,details.login-help::after{content:none}
 details.login-help summary{cursor:pointer;font-weight:700}
 details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
+
+.regulations-text{line-height:1.75;overflow-wrap:anywhere}
+.regulations-text p,.regulations-text h3,.regulations-text h4,.regulations-text td,.regulations-text th{white-space:pre-wrap;text-align:right}
+.regulations-text h4{margin:1.6em 0 .35em}

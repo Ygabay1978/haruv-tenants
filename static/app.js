@@ -170,5 +170,20 @@ document.querySelectorAll('.building-photo').forEach(img=>img.addEventListener('
 
 let activePortalTab='apartment',servicesLoaded=false;
 async function showServices(){const data=await api('/api/services');$('services-disclaimer').textContent=data.disclaimer;const list=$('services-list');list.replaceChildren();if(!data.providers.length)text('p','בעלי מקצוע ונותני שירותים יופיעו כאן לאחר שהוועד יוסיף את פרטיהם.',list);for(const p of data.providers){const card=document.createElement('article');card.className='service-card';text('small',p.category,card);text('h3',p.name,card);if(p.phone){const phone=text('a',p.phone,card);phone.href='tel:'+p.phone.replace(/[^+0-9]/g,'');phone.dir='ltr';phone.className='service-phone'}if(p.url){const link=text('a','פתיחת אתר ↗',card);link.href=p.url;link.target='_blank';link.rel='noopener noreferrer'}if(p.notes)text('p',p.notes,card);list.appendChild(card)}servicesLoaded=true}
-async function selectPortalTab(tab){activePortalTab=tab;for(const key of ['apartment','building','services','regulations']){$(key+'-pane').hidden=key!==tab;document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key===tab))}if(tab==='services'){try{await showServices();trackUsage('services',null)}catch(e){message(e.message,true)}}else if(tab==='building')observeUsage($('summary'),'building_summary',null)}
+async function showRegulations(){
+ const host=$('regulations-text');host.textContent='טוען את התקנון…';
+ try{
+  const {blocks}=await api('/api/regulations');host.replaceChildren();
+  if(!blocks.length)text('p','התקנון הזמני יפורסם כאן בהמשך.',host);
+  for(const b of blocks){
+   if(b.tag==='table'){
+    const scroll=document.createElement('div');scroll.className='payment-scroll';
+    const table=document.createElement('table');
+    b.rows.forEach((values,i)=>{const row=document.createElement('tr');for(const value of values)text(i===0?'th':'td',value,row);table.appendChild(row)});
+    scroll.appendChild(table);host.appendChild(scroll);
+   }else if(['h3','h4','p'].includes(b.tag))text(b.tag,b.text,host);
+  }
+ }catch(e){host.textContent='לא ניתן לטעון את התקנון. נסו לפתוח את הטאב שוב.'}
+}
+async function selectPortalTab(tab){activePortalTab=tab;for(const key of ['apartment','building','services','regulations']){$(key+'-pane').hidden=key!==tab;document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key===tab))}if(tab==='services'){try{await showServices();trackUsage('services',null)}catch(e){message(e.message,true)}}else if(tab==='regulations')await showRegulations();else if(tab==='building')observeUsage($('summary'),'building_summary',null)}
 document.querySelectorAll('[data-portal-tab]').forEach(button=>button.onclick=()=>selectPortalTab(button.dataset.portalTab));

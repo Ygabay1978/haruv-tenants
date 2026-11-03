@@ -394,6 +394,9 @@ def app(env, start):
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
             return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(',')),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
+        if path == '/api/regulations' and method=='GET':
+            row = c.execute('SELECT content FROM regulations WHERE id=1').fetchone()
+            return respond({'blocks':json.loads(row['content']) if row else []})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()
             html = tenant_summary.render(row['html']) if row else '<p dir="rtl">טרם הועלה סיכום</p>'
