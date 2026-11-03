@@ -299,7 +299,7 @@ def app(env, start):
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
                 notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
-                return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.resident_payload(row['payload']),'notices':notices}]})
+                return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.resident_payload(row['payload'],apt,[role]),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
@@ -393,7 +393,7 @@ def app(env, start):
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
-            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload']),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
+            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(',')),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
         if path == '/api/summary' and method=='GET':
             row = c.execute('SELECT html FROM summary WHERE id=1').fetchone()
             html = tenant_summary.render(row['html']) if row else '<p dir="rtl">טרם הועלה סיכום</p>'

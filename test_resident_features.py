@@ -20,6 +20,25 @@ class ResidentFeatureTests(unittest.TestCase):
         self.assertTrue(result['status'].startswith('200'))
         self.assertEqual(json.loads(result['body']),{'contacts':[{'name':'Committee Contact','phone':'0500000000','topics':'Maintenance'}]})
         self.assertNotIn(b'private@example.com',result['body']);self.assertNotIn(b'hidden@example.com',result['body'])
+    def test_ev_payload_is_scoped_to_the_authorized_apartment_role(self):
+        payload=json.dumps({'monthly':123,'tenants':['Tenant'],'electricVehicle':{'holder':'Private EV','months':[42]}})
+        for apt in (1,45,50):
+            self.c.execute('INSERT INTO apartments(apt,payload) VALUES(?,?) ON CONFLICT(apt) DO UPDATE SET payload=excluded.payload',(apt,payload))
+        for apt in (45,50):
+            for address,role in [('owner@example.com','owner'),('tenant@example.com','tenant')]:
+                self.c.execute('INSERT INTO email_memberships VALUES(?,?,?,1)',(address,apt,role))
+        self.c.commit()
+        self.make_admin()
+        for role in ('owner','tenant'):
+            cookie=self.session(role+'@example.com')
+            rows=json.loads(self.request('/api/apartments',cookie=cookie)['body'])['apartments']
+            self.assertEqual({a['apt'] for a in rows if 'electricVehicle' in a['data']},{45,50} if role=='owner' else {1})
+            self.assertTrue(all(a['data']['monthly']==123 for a in rows))
+        cookie=self.session('owner@example.com')
+        for apt,role,visible in [(1,'owner',False),(1,'tenant',True),(45,'tenant',False),(50,'owner',True),(50,'committee',False)]:
+            response=self.request('/api/preview',{'apt':apt,'role':role},cookie=cookie)
+            data=json.loads(response['body'])['apartments'][0]['data']
+            self.assertEqual('electricVehicle' in data,visible)
     def test_preview_requires_explicit_viewer_and_remains_read_only(self):
         cookie=self.session('owner@example.com')
         self.assertTrue(self.request('/api/viewer/context',cookie=cookie)['status'].startswith('403'))

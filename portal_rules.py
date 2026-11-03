@@ -13,11 +13,14 @@ def collection_status(data, now=None):
     level='legal' if monthly>0 and arrears>monthly*3+0.01 else 'payment' if monthly>0 and arrears>monthly*2+0.01 else None
     return {'level':level,'amount':round(arrears,2),'throughMonth':months,'year':year}
 
-def resident_payload(raw):
+def resident_payload(raw, apt, roles):
     data=json.loads(raw)
     keys=('year','monthly','annual','paid','due','monthlyPayments','owners','tenants','ownerContacts','tenantContacts','access','floor','rooms','parking','storage','electricVehicle','support','monthlyReceipts')
     result={k:data[k] for k in keys if k in data}
     if 'monthlyReceipts' in result:result['monthlyReceipts']=[str(v)[:80] if v is not None else '' for v in result['monthlyReceipts'][:12]] if isinstance(result['monthlyReceipts'],list) else []
+    required_role='owner' if apt in (45,50) else 'tenant'
+    result['canViewElectricVehicle']=required_role in roles
+    if not result['canViewElectricVehicle']:result.pop('electricVehicle',None)
     result['collection']=collection_status(result)
     return result
 

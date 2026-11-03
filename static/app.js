@@ -44,7 +44,7 @@ function unitDetails(data,box){
   for(const [label,key] of [['קומה','floor'],['חדרים','rooms'],['חניה','parking'],['מחסן','storage']]){
     const cell=document.createElement('div');text('dt',label,cell);text('dd',data[key]===null||data[key]===undefined||data[key]===''?'לא רשום במאגר':String(data[key]),cell);grid.appendChild(cell)
   }
-  const evCell=document.createElement('div');text('dt','בעל רכב חשמלי',evCell);text('dd',data.electricVehicle?'כן':'לא',evCell);grid.appendChild(evCell);box.appendChild(grid);
+  if(data.canViewElectricVehicle){const evCell=document.createElement('div');text('dt','בעל רכב חשמלי',evCell);text('dd',data.electricVehicle?'כן':'לא',evCell);grid.appendChild(evCell)}box.appendChild(grid);
 }
 function notices(items,box){
   if(!items||!items.length)return;
