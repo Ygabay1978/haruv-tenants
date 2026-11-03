@@ -65,18 +65,41 @@ function evDetails(ev,box){
   if(ev.holder)text('small','רישום עמדת הטעינה: '+ev.holder,section);
   for(const note of notes)text('small',note,section);box.appendChild(section);
 }
+function evMonthlyChart(title,values,average,format,parent){
+  if(!values.some(Number.isFinite))return;
+  const figure=document.createElement('figure');figure.className='ev-chart';
+  text('figcaption',title,figure);
+  const legend=text('p','ממוצע חודשי: '+format(average),figure);legend.className='ev-average';
+  const chart=document.createElement('div');chart.className='ev-plot';
+  const max=Math.max(1,average,...values.filter(Number.isFinite))*1.15;
+  const line=document.createElement('div');line.className='ev-average-line';line.style.bottom=(average/max*100)+'%';line.setAttribute('aria-hidden','true');chart.appendChild(line);
+  const labels=document.createElement('div');labels.className='ev-chart-labels';labels.setAttribute('aria-hidden','true');
+  values.forEach((value,i)=>{
+    const slot=document.createElement('div');slot.className='ev-bar-slot';
+    const valid=Number.isFinite(value);
+    const detail=monthsHE[i]+': '+(valid?format(value):'אין נתון');
+    const bar=document.createElement('div');bar.className='ev-bar'+(valid?'':' ev-bar-missing');
+    bar.style.height=valid?(value/max*100)+'%':'0';
+    bar.setAttribute('role','img');bar.setAttribute('aria-label',detail);bar.title=detail;
+    if(valid){bar.tabIndex=0;const tip=text('span',format(value),bar);tip.className='ev-bar-tip';tip.dir='ltr';tip.setAttribute('aria-hidden','true')}
+    slot.appendChild(bar);chart.appendChild(slot);text('span',monthsHE[i].slice(0,3),labels);
+  });
+  figure.append(chart,labels);parent.appendChild(figure);
+}
 function evComparison(ev,limit,box){
   if(!ev)return;
   const months=(ev.months||[]).slice(0,limit),notes=(ev.monthNotes||[]).slice(0,limit);
   const lastCharge=months.reduce((last,v,i)=>Number.isFinite(v)&&v>0?i:last,-1);
   const lastSale=notes.reduce((last,n,i)=>/מכר.*רכב/.test(n||'')?i:last,-1);
   if(lastSale>=0&&lastSale>=lastCharge)return;
-  const active=months.flatMap((amount,i)=>{
-    if(!Number.isFinite(amount)||amount<=0)return [];
+  const usageByMonth=Array.from({length:months.length},(_,i)=>{
+    const amount=months[i];
+    if(!Number.isFinite(amount)||amount<=0)return null;
     const match=String(notes[i]||'').trim().match(/^([\d,]+(?:\.\d+)?)\s*(?:קוט["״”׳']?ש)?\s*$/);
     const kwh=match?Number(match[1].replaceAll(',','')):NaN;
-    return Number.isFinite(kwh)&&kwh>0?[{amount,kwh}]:[];
+    return Number.isFinite(kwh)&&kwh>0?kwh:null;
   });
+  const active=usageByMonth.flatMap((kwh,i)=>kwh===null?[]:[{amount:months[i],kwh}]);
   const section=document.createElement('section');section.className='apartment ev-comparison';
   text('h3','השוואת עלויות טעינת רכב חשמלי',section);
   if(!active.length){text('p','עדיין אין מספיק נתוני טעינה לחישוב ממוצע אישי.',section);box.appendChild(section);return}
@@ -84,11 +107,26 @@ function evComparison(ev,limit,box){
   const average=key=>active.reduce((sum,row)=>sum+row[key],0)/count;
   const kwh=average('kwh');
   text('p',count===active.length?'ממוצע חודשי לפי '+count+' חודשי טעינה עם נתוני צריכה וחיוב.':'סכומי הצריכה והחיוב שנרשמו ב־'+active.length+' חודשים חולקו ב־'+count+' חודשי פעילות.',section);
-  const grid=document.createElement('dl');grid.className='unit-details';
-  for(const [label,value] of [['צריכה ממוצעת',kwh.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2})+' קוט״ש'],['חיוב ממוצע כיום (0.63 ₪ לקוט״ש)',money(average('amount'))],['לפי 1 ₪ לקוט״ש',money(kwh)],['לפי 1.50 ₪ לקוט״ש',money(kwh*1.5)]]){
-    const cell=document.createElement('div');text('dt',label,cell);text('dd',value,cell);grid.appendChild(cell);
+  const grid=document.createElement('dl');grid.className='ev-comparison-grid';
+  const usage=kwh.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2});
+  for(const [kind,label,value,detail] of [
+    ['usage','צריכה ממוצעת',usage,'קוט״ש בחודש'],
+    ['current','חיוב ממוצע כיום',money(average('amount')),'0.63 ₪ לקוט״ש'],
+    ['estimate','תרחיש תעריף',money(kwh),'1.00 ₪ לקוט״ש'],
+    ['estimate','תרחיש תעריף',money(kwh*1.5),'1.50 ₪ לקוט״ש'],
+  ]){
+    const cell=document.createElement('div');cell.className='ev-rate ev-rate-'+kind;
+    text('dt',label,cell);
+    const amount=text('dd',value,cell);amount.dir='ltr';
+    text('small',detail,amount).dir='rtl';
+    grid.appendChild(cell);
   }
   section.appendChild(grid);
+  const charts=document.createElement('div');charts.className='ev-charts';
+  const kwhLabel=n=>n.toLocaleString('he-IL',{maximumFractionDigits:2})+' קוט״ש';
+  evMonthlyChart('צריכת חשמל לפי חודש',usageByMonth,kwh,kwhLabel,charts);
+  evMonthlyChart('עלות טעינה לפי חודש',Array.from({length:months.length},(_,i)=>Number.isFinite(months[i])&&months[i]>0?months[i]:null),average('amount'),money,charts);
+  section.appendChild(charts);
   text('small','החלופות הן להמחשה לפי אותה צריכה. החיוב הנוכחי מבוסס על הסכומים שנרשמו, כולל חיובים שטרם שולמו.',section);
   box.appendChild(section);
 }

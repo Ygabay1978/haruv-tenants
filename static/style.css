@@ -58,3 +58,26 @@ details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
 .regulations-text{line-height:1.75;overflow-wrap:anywhere}
 .regulations-text p,.regulations-text h3,.regulations-text h4,.regulations-text td,.regulations-text th{white-space:pre-wrap;text-align:right}
 .regulations-text h4{margin:1.6em 0 .35em}
+
+/* Personal electric vehicle tariff comparison */
+.ev-comparison-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.ev-rate{min-width:0;padding:14px 12px;text-align:center;border:1px solid #e3d6c3;border-radius:10px;background:#faf5ed}
+.ev-rate-current{background:#eee1cb;border-color:#b59a73}
+.ev-rate dt{font-size:.82rem;font-weight:700;color:#624d3b}
+.ev-rate dd{margin:5px 0 0;color:#38281f;font:700 clamp(1rem,2vw,1.45rem)/1.25 system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.ev-rate dd small{display:block;margin-top:5px;color:#624d3b;font-size:.74rem;font-weight:500}
+@media(max-width:720px){.ev-comparison-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.ev-charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 16px}
+.ev-chart{min-width:0;margin:0;padding:14px;border:1px solid #e3d6c3;border-radius:10px;background:#fffaf3}
+.ev-chart figcaption{font-weight:800;color:#38281f}
+.ev-average{display:flex;align-items:center;gap:7px;margin:5px 0 12px;font-size:.8rem;color:#624d3b}
+.ev-average::before{content:'';width:20px;border-top:2px dashed #724627}
+.ev-plot,.ev-chart-labels{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px}
+.ev-plot{position:relative;height:118px;border-bottom:1px solid #cbb89f}
+.ev-average-line{position:absolute;z-index:1;inset-inline:0;border-top:2px dashed #724627;pointer-events:none}
+.ev-bar-slot{display:flex;align-items:end;justify-content:center;min-height:0}
+.ev-bar{position:relative;width:72%;max-width:28px;background:#9b704b;border-radius:4px 4px 0 0;outline-offset:2px}
+.ev-bar-tip{display:none;position:absolute;z-index:2;bottom:100%;padding:3px 5px;background:#38281f;color:white;border-radius:4px;font-size:11px;white-space:nowrap}
+.ev-bar:hover .ev-bar-tip,.ev-bar:focus .ev-bar-tip{display:block}
+.ev-chart-labels{text-align:center;font-size:clamp(8px,1vw,11px);margin-top:5px;color:#624d3b}
+@media(max-width:850px){.ev-charts{grid-template-columns:1fr}}
