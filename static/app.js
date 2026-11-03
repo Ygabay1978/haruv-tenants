@@ -129,7 +129,12 @@ async function load(){
     accessButtons(a.data,a.apt,box);
     const metrics=document.createElement('div');metrics.className='metrics';
     for(const [label,key] of [['תשלום חודשי','monthly'],['שולם השנה','paid'],['יתרה שנתית לתשלום','due']]){
-      const m=document.createElement('div');m.className='metric';text('span',label,m);text('strong',money(a.data[key]),m);metrics.appendChild(m)
+      const m=document.createElement('div');m.className='metric';text('span',label,m);
+      if(key==='due'&&a.data.solarRepairDue>0){
+        const balance=document.createElement('div');text('strong',money(a.data[key]),balance);
+        text('small','כולל '+a.data.solarRepairDue.toLocaleString('he-IL')+' ש״ח בגין מערכת סולארית',balance).className='balance-note';m.appendChild(balance);
+      }else text('strong',money(a.data[key]),m);
+      metrics.appendChild(m)
     }
     box.appendChild(metrics);
     const detail=document.createElement('details');detail.open=true;text('summary','פירוט תשלומים חודשי',detail);

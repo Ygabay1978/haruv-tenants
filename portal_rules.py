@@ -15,7 +15,7 @@ def collection_status(data, now=None):
 
 def resident_payload(raw, apt, roles):
     data=json.loads(raw)
-    keys=('year','monthly','annual','paid','due','monthlyPayments','owners','tenants','ownerContacts','tenantContacts','access','floor','rooms','parking','storage','electricVehicle','support','monthlyReceipts','paymentNotes')
+    keys=('year','monthly','annual','paid','due','monthlyPayments','owners','tenants','ownerContacts','tenantContacts','access','floor','rooms','parking','storage','electricVehicle','support','monthlyReceipts','paymentNotes','solarRepairDue')
     result={k:data[k] for k in keys if k in data}
     if 'monthlyReceipts' in result:result['monthlyReceipts']=[str(v)[:80] if v is not None else '' for v in result['monthlyReceipts'][:12]] if isinstance(result['monthlyReceipts'],list) else []
     required_role='owner' if apt in (45,50) else 'tenant'
