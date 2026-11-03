@@ -1,7 +1,7 @@
 """Resident scoping, collection warning calculation and notice validation."""
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import json,math
+import json,math,re
 
 def collection_status(data, now=None):
     now=now or datetime.now(ZoneInfo('Asia/Jerusalem'))
@@ -23,6 +23,45 @@ def resident_payload(raw, apt, roles):
     if not result['canViewElectricVehicle']:result.pop('electricVehicle',None)
     result['collection']=collection_status(result)
     return result
+
+def ev_monthly_average(ev, limit):
+    if not isinstance(ev,dict):return None
+    months=(ev.get('months') or [])[:limit]
+    notes=(ev.get('monthNotes') or [])[:limit]
+    def positive(v):
+        return type(v) in (int,float) and math.isfinite(v) and v>0
+    last_charge=max((i for i,v in enumerate(months) if positive(v)),default=-1)
+    last_sale=max((i for i,v in enumerate(notes) if re.search('מכר.*רכב',str(v or ''))),default=-1)
+    if last_sale>=0 and last_sale>=last_charge:return None
+    active=[]
+    for amount,note in zip(months,notes):
+        if not positive(amount):continue
+        match=re.fullmatch(r"""([0-9,]+(?:[.][0-9]+)?)[\s]*(?:קוט["״”׳']?ש)?""",str(note or '').strip())
+        if not match:continue
+        try:kwh=float(match[1].replace(',',''))
+        except ValueError:continue
+        if positive(kwh):active.append((kwh,amount))
+    if not active:return None
+    count=ev.get('averagingMonths')
+    if type(count) is not int or not len(active)<=count<=12:count=len(active)
+    return tuple(sum(col)/count for col in zip(*active))
+
+def add_ev_benchmark(c, apt, data):
+    ev=data.get('electricVehicle')
+    if not ev or not data['canViewElectricVehicle']:return data
+    period=data['collection']
+    averages=[]
+    for row in c.execute('SELECT payload FROM apartments WHERE apt<>?',(apt,)).fetchall():
+        other=json.loads(row['payload'])
+        if int(other.get('year',2026))!=period['year']:continue
+        average=ev_monthly_average(other.get('electricVehicle'),period['throughMonth'])
+        if average is not None:averages.append(average)
+    if len(averages)>=3:
+        data['electricVehicle']={**ev,'peerAverage':{
+            key:round(sum(values)/len(averages),2)
+            for key,values in zip(('kwh','amount'),zip(*averages))
+        }}
+    return data
 
 def notice_input(body,c):
     kind=body.get('kind','message');audience=body.get('audience','all');apt=body.get('apt')

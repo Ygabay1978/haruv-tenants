@@ -81,3 +81,9 @@ details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
 .ev-bar:hover .ev-bar-tip,.ev-bar:focus .ev-bar-tip{display:block}
 .ev-chart-labels{text-align:center;font-size:clamp(8px,1vw,11px);margin-top:5px;color:#624d3b}
 @media(max-width:850px){.ev-charts{grid-template-columns:1fr}}
+.ev-average-personal{--ev-line:#724627}
+.ev-average-peers{--ev-line:#176d78}
+.ev-average::before,.ev-average-line{border-color:var(--ev-line,#724627)}
+.ev-average-peers::before,.ev-average-line.ev-average-peers{border-top-style:dotted}
+.ev-average.ev-average-peers{color:#17606a}
+.ev-average::before{flex-shrink:0}

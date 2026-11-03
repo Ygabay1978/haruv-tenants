@@ -65,14 +65,18 @@ function evDetails(ev,box){
   if(ev.holder)text('small','רישום עמדת הטעינה: '+ev.holder,section);
   for(const note of notes)text('small',note,section);box.appendChild(section);
 }
-function evMonthlyChart(title,values,average,format,parent){
+function evMonthlyChart(title,values,average,peer,format,parent){
   if(!values.some(Number.isFinite))return;
   const figure=document.createElement('figure');figure.className='ev-chart';
   text('figcaption',title,figure);
-  const legend=text('p','ממוצע חודשי: '+format(average),figure);legend.className='ev-average';
+  const averages=[['personal','הממוצע החודשי שלי',average]];
+  if(Number.isFinite(peer))averages.push(['peers','הממוצע החודשי של שאר הדירות עם טעינה',peer]);
   const chart=document.createElement('div');chart.className='ev-plot';
-  const max=Math.max(1,average,...values.filter(Number.isFinite))*1.15;
-  const line=document.createElement('div');line.className='ev-average-line';line.style.bottom=(average/max*100)+'%';line.setAttribute('aria-hidden','true');chart.appendChild(line);
+  const max=Math.max(1,...averages.map(([, , value])=>value),...values.filter(Number.isFinite))*1.15;
+  for(const [kind,label,value] of averages){
+    const legend=text('p',label+': '+format(value),figure);legend.className='ev-average ev-average-'+kind;
+    const line=document.createElement('div');line.className='ev-average-line ev-average-'+kind;line.style.bottom=(value/max*100)+'%';line.setAttribute('aria-hidden','true');chart.appendChild(line);
+  }
   const labels=document.createElement('div');labels.className='ev-chart-labels';labels.setAttribute('aria-hidden','true');
   values.forEach((value,i)=>{
     const slot=document.createElement('div');slot.className='ev-bar-slot';
@@ -124,9 +128,10 @@ function evComparison(ev,limit,box){
   section.appendChild(grid);
   const charts=document.createElement('div');charts.className='ev-charts';
   const kwhLabel=n=>n.toLocaleString('he-IL',{maximumFractionDigits:2})+' קוט״ש';
-  evMonthlyChart('צריכת חשמל לפי חודש',usageByMonth,kwh,kwhLabel,charts);
-  evMonthlyChart('עלות טעינה לפי חודש',Array.from({length:months.length},(_,i)=>Number.isFinite(months[i])&&months[i]>0?months[i]:null),average('amount'),money,charts);
+  evMonthlyChart('צריכת חשמל לפי חודש',usageByMonth,kwh,ev.peerAverage?.kwh,kwhLabel,charts);
+  evMonthlyChart('עלות טעינה לפי חודש',Array.from({length:months.length},(_,i)=>Number.isFinite(months[i])&&months[i]>0?months[i]:null),average('amount'),ev.peerAverage?.amount,money,charts);
   section.appendChild(charts);
+  if(ev.peerAverage)text('small','ממוצע שאר הדירות מחושב מממוצעי הדירות שיש להן נתוני טעינה, ללא הדירה שלך.',section);
   text('small','החלופות הן להמחשה לפי אותה צריכה. החיוב הנוכחי מבוסס על הסכומים שנרשמו, כולל חיובים שטרם שולמו.',section);
   box.appendChild(section);
 }
