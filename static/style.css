@@ -93,7 +93,7 @@ details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
 #portal .unit-details{background:transparent;padding:0;gap:9px}
 #portal .unit-details>div,#portal .metric{border:1px solid #e2d4c1;border-radius:10px;padding:13px 12px;background:#f7f0e5;text-align:start;min-width:0}
 #portal .unit-details dd{font-weight:650;overflow-wrap:anywhere}
-#portal .metric:last-child{background:#eee0c9}
+#portal .metric-due{background:#eee0c9}
 #portal .people{border:0;padding:0;gap:12px;margin:0 0 18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));align-items:start}
 #portal .people-group{padding:13px 15px;border:1px solid #e2d4c1;border-radius:10px;background:#fffaf3}
 #portal .people-tenants{background:#f7efe3}
@@ -127,3 +127,13 @@ details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
   #portal .portal-navigation button{transition:none}
   #portal .portal-navigation button:hover{transform:none}
 }
+
+#portal .unit-details>div,#portal .metric,#portal .access-inline,#portal .people-group{text-align:center}
+#portal .person{justify-content:center}
+#portal .gym-booking{margin-inline:auto}
+#portal .metric{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px}
+#portal .metric-ev{background:#e9eee6;border-color:#ccd8c8}
+#portal .metric-ev strong{color:#315742}
+@media(min-width:1000px){#portal .metrics-with-ev{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:999px){#portal .metrics-with-ev{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:360px){#portal .metrics-with-ev{grid-template-columns:1fr}}

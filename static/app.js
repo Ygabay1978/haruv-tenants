@@ -180,18 +180,27 @@ async function load(){
     unitDetails(a.data,box);
     people(a.data,box);
     accessButtons(a.data,a.apt,box);
-    const metrics=document.createElement('div');metrics.className='metrics';
+    const ev=a.data.electricVehicle;
+    const metrics=document.createElement('div');metrics.className=ev?'metrics metrics-with-ev':'metrics';
     for(const [label,key] of [['תשלום חודשי','monthly'],['שולם השנה','paid'],['יתרה שנתית לתשלום','due']]){
-      const m=document.createElement('div');m.className='metric';text('span',label,m);
+      const m=document.createElement('div');m.className='metric metric-'+key;text('span',label,m);
       if(key==='due'&&a.data.solarRepairDue>0){
         const balance=document.createElement('div');text('strong',money(a.data[key]),balance);
         text('small','כולל '+a.data.solarRepairDue.toLocaleString('he-IL')+' ש״ח בגין מערכת סולארית',balance).className='balance-note';m.appendChild(balance);
       }else text('strong',money(a.data[key]),m);
       metrics.appendChild(m)
     }
+    if(ev){
+      const through=a.data.collection?.throughMonth??0;
+      const collected=(ev.months||[]).slice(0,through).reduce((sum,value,i)=>
+        Number.isFinite(value)&&value>0&&!(ev.monthUnpaid||[])[i]?sum+value:sum,0);
+      const m=document.createElement('div');m.className='metric metric-ev';
+      text('span','סה״כ נגבה על טעינת רכב',m);
+      text('strong',money(collected),m);metrics.appendChild(m);
+    }
     box.appendChild(metrics);
     const detail=document.createElement('details');detail.open=true;text('summary','פירוט תשלומים חודשי',detail);
-    const table=document.createElement('table');table.className='payment-table';const head=document.createElement('thead');const row=document.createElement('tr');const ev=a.data.electricVehicle;
+    const table=document.createElement('table');table.className='payment-table';const head=document.createElement('thead');const row=document.createElement('tr');
     ['חודש','שולם ועד בית',...(ev?['רכב חשמלי']:[]),'מספר קבלה','הערות'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');
     (a.data.monthlyPayments||[]).forEach((v,i)=>{
       const r=document.createElement('tr');const month=text('th',monthsHE[i],r);month.scope='row';const amount=text('td',money(v),r);amount.className=Number(v)>0?'paid':'unpaid';
