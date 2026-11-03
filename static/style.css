@@ -87,3 +87,43 @@ details.login-help p{margin:8px 0 0;line-height:1.65;font-weight:400}
 .ev-average-peers::before,.ev-average-line.ev-average-peers{border-top-style:dotted}
 .ev-average.ev-average-peers{color:#17606a}
 .ev-average::before{flex-shrink:0}
+
+/* Apartment information and navigation */
+#portal .apartment{text-align:start;min-width:0}
+#portal .unit-details{background:transparent;padding:0;gap:9px}
+#portal .unit-details>div,#portal .metric{border:1px solid #e2d4c1;border-radius:10px;padding:13px 12px;background:#f7f0e5;text-align:start;min-width:0}
+#portal .unit-details dd{font-weight:650;overflow-wrap:anywhere}
+#portal .metric:last-child{background:#eee0c9}
+#portal .people{border:0;padding:0;gap:12px;margin:0 0 18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));align-items:start}
+#portal .people-group{padding:13px 15px;border:1px solid #e2d4c1;border-radius:10px;background:#fffaf3}
+#portal .people-tenants{background:#f7efe3}
+#portal .people-group h3{margin:0 0 8px;color:#63462e}
+#portal .person{display:flex;align-items:center;flex-wrap:wrap;column-gap:12px;row-gap:1px;padding:8px 0;margin:0}
+#portal .person+.person{border-top:1px solid #e8dccd}
+#portal .person-name{font-weight:750;font-size:15px;overflow-wrap:anywhere}
+#portal .person-contact{font-size:13px;margin:0;max-width:100%;color:#63462e;text-decoration:underline;text-underline-offset:3px}
+#portal .access-buttons{gap:12px;margin-bottom:18px}
+#portal .access-inline{border-radius:10px;background:#fffaf3;padding:14px 15px;text-align:start}
+#portal .access-gym{background:#f5ecdd}
+#portal .access-names{font-size:14px;overflow-wrap:anywhere}
+#portal .access-unavailable{color:#685749}
+#portal .gym-booking{margin:12px 0 0;width:fit-content;max-width:100%;padding:8px 14px;border-radius:8px}
+#portal .portal-navigation{gap:8px}
+#portal .portal-navigation button{--tab-shift:-4px;min-height:48px;padding:11px 13px;border-radius:10px;font-size:16px;font-weight:800;line-height:1.35;background:linear-gradient(135deg,#fffaf2,#eee0cc);transition:transform .18s ease,box-shadow .18s ease,background-color .18s ease}
+#portal .portal-navigation button[aria-selected=true]{background:linear-gradient(135deg,#38281f,#644832);color:#fffaf2;border-color:#38281f}
+#portal .portal-navigation button:focus-visible,#portal .gym-booking:focus-visible{outline:2px solid #8a613c;outline-offset:3px}
+@media(hover:hover) and (pointer:fine){
+  #portal .portal-navigation button:hover{transform:translateX(var(--tab-shift));box-shadow:0 4px 12px #38281f25}
+}
+@media(max-width:720px){
+  #portal .portal-navigation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  #portal .portal-navigation button{--tab-shift:0px;min-width:0;text-align:center;font-size:15px;padding:9px 7px}
+  #portal .people{grid-template-columns:1fr}
+  #portal .person-name{flex-basis:100%}
+  #portal .person-contact{min-height:44px;display:inline-flex;align-items:center}
+  #portal .gym-booking{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  #portal .portal-navigation button{transition:none}
+  #portal .portal-navigation button:hover{transform:none}
+}

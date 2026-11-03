@@ -16,7 +16,7 @@ function people(data,box){
   for(const [label,key] of [['בעלי הדירה','owners'],['שוכרים','tenants']]){
     const names=Array.isArray(data[key])?data[key]:[];
     if(key==='tenants'&&!names.length) continue;
-    const col=document.createElement('div');text('h3',label+': ',col);
+    const col=document.createElement('section');col.className='people-group people-'+key;text('h3',label,col);
     const contacts=Array.isArray(data[key==='owners'?'ownerContacts':'tenantContacts'])?data[key==='owners'?'ownerContacts':'tenantContacts']:[];
     for(const name of names){
       const person=document.createElement('div');person.className='person';const e=text('div',name,person);e.className='person-name';
@@ -34,9 +34,19 @@ function people(data,box){
 }
 function accessButtons(data,apt,box){
   const group=document.createElement('div');group.className='access-buttons';
-  for(const [label,key] of [['חדר כושר','gym'],['PAL','pal']]){const cell=document.createElement('section');cell.className='access-inline';text('h3',label,cell);const names=data.access&&typeof data.access[key]==='string'?data.access[key].trim():'';text('div',names||'לא רשומה הרשאה',cell).className='access-names';group.appendChild(cell)}
+  for(const [label,key] of [['חדר כושר','gym'],['PAL','pal']]){
+    const cell=document.createElement('section');cell.className='access-inline access-'+key;
+    text('h3',label,cell);
+    const names=data.access&&typeof data.access[key]==='string'?data.access[key].trim():'';
+    text('div',names||'לא רשומה הרשאה',cell).className='access-names'+(names?'':' access-unavailable');
+    if(key==='gym'&&names){
+      const booking=text('a','קביעת תור לאימון בחד״כ',cell);
+      booking.href='https://calendly.com/gym-zait10';booking.target='_blank';booking.rel='noopener noreferrer';
+      booking.className='gym-booking';booking.onclick=()=>trackUsage('gym_booking',apt);
+    }
+    group.appendChild(cell);
+  }
   box.appendChild(group);
-  if(data.access&&typeof data.access.gym==='string'&&data.access.gym.trim()){const booking=text('a','קביעת תור לאימון בחד״כ',box);booking.href='https://calendly.com/gym-zait10';booking.target='_blank';booking.rel='noopener noreferrer';booking.className='gym-booking';booking.onclick=()=>trackUsage('gym_booking',apt)}
 }
 const monthsHE=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 function unitDetails(data,box){
