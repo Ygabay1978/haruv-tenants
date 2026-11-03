@@ -65,6 +65,32 @@ function evDetails(ev,box){
   if(ev.holder)text('small','רישום עמדת הטעינה: '+ev.holder,section);
   for(const note of notes)text('small',note,section);box.appendChild(section);
 }
+function evComparison(ev,limit,box){
+  if(!ev)return;
+  const months=(ev.months||[]).slice(0,limit),notes=(ev.monthNotes||[]).slice(0,limit);
+  const lastCharge=months.reduce((last,v,i)=>Number.isFinite(v)&&v>0?i:last,-1);
+  const lastSale=notes.reduce((last,n,i)=>/מכר.*רכב/.test(n||'')?i:last,-1);
+  if(lastSale>=0&&lastSale>=lastCharge)return;
+  const active=months.flatMap((amount,i)=>{
+    if(!Number.isFinite(amount)||amount<=0)return [];
+    const match=String(notes[i]||'').trim().match(/^([\d,]+(?:\.\d+)?)\s*(?:קוט["״”׳']?ש)?\s*$/);
+    const kwh=match?Number(match[1].replaceAll(',','')):NaN;
+    return Number.isFinite(kwh)&&kwh>0?[{amount,kwh}]:[];
+  });
+  const section=document.createElement('section');section.className='apartment ev-comparison';
+  text('h3','השוואת עלויות טעינת רכב חשמלי',section);
+  if(!active.length){text('p','עדיין אין מספיק נתוני טעינה לחישוב ממוצע אישי.',section);box.appendChild(section);return}
+  const average=key=>active.reduce((sum,row)=>sum+row[key],0)/active.length;
+  const kwh=average('kwh');
+  text('p','ממוצע חודשי לפי '+active.length+' חודשי טעינה עם נתוני צריכה וחיוב.',section);
+  const grid=document.createElement('dl');grid.className='unit-details';
+  for(const [label,value] of [['צריכה ממוצעת',kwh.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2})+' קוט״ש'],['חיוב ממוצע כיום (0.63 ₪ לקוט״ש)',money(average('amount'))],['לפי 1 ₪ לקוט״ש',money(kwh)],['לפי 1.50 ₪ לקוט״ש',money(kwh*1.5)]]){
+    const cell=document.createElement('div');text('dt',label,cell);text('dd',value,cell);grid.appendChild(cell);
+  }
+  section.appendChild(grid);
+  text('small','החלופות הן להמחשה לפי אותה צריכה. החיוב הנוכחי מבוסס על הסכומים שנרשמו, כולל חיובים שטרם שולמו.',section);
+  box.appendChild(section);
+}
 function help(contacts){
  for(const [container,section] of [['help-contacts','help-section'],['login-help-contacts','login-support']]){
   const parent=$(container);parent.replaceChildren();
@@ -113,7 +139,7 @@ async function load(){
       if(ev){const value=(ev.months||[])[i];const cell=text('td','',r);text('bdi',value===null||value===undefined?'—':money(value),cell).dir='rtl';if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';cell.classList.add('ev-payment')}const note=(ev.monthNotes||[])[i];if(note){cell.classList.add('ev-payment');const consumption=text('bdi',note,cell);consumption.dir='rtl';consumption.className='ev-consumption'}}
       const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';body.appendChild(r)
     });
-    table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(a.data.electricVehicle,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
+    table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(ev,box);evComparison(ev,a.data.collection?.throughMonth??0,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
   }
   if(!$('summary').getAttribute('src'))$('summary').src='/api/summary';
   document.body.classList.remove('login-mode');$('login').hidden=true;$('portal').hidden=false;observeUsage($('summary'),'building_summary',null);if(activePortalTab==='services')showServices().catch(e=>message(e.message,true));message('')
