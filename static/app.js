@@ -80,9 +80,10 @@ function evComparison(ev,limit,box){
   const section=document.createElement('section');section.className='apartment ev-comparison';
   text('h3','השוואת עלויות טעינת רכב חשמלי',section);
   if(!active.length){text('p','עדיין אין מספיק נתוני טעינה לחישוב ממוצע אישי.',section);box.appendChild(section);return}
-  const average=key=>active.reduce((sum,row)=>sum+row[key],0)/active.length;
+  const count=Number.isInteger(ev.averagingMonths)&&ev.averagingMonths>=active.length&&ev.averagingMonths<=12?ev.averagingMonths:active.length;
+  const average=key=>active.reduce((sum,row)=>sum+row[key],0)/count;
   const kwh=average('kwh');
-  text('p','ממוצע חודשי לפי '+active.length+' חודשי טעינה עם נתוני צריכה וחיוב.',section);
+  text('p',count===active.length?'ממוצע חודשי לפי '+count+' חודשי טעינה עם נתוני צריכה וחיוב.':'סכומי הצריכה והחיוב שנרשמו ב־'+active.length+' חודשים חולקו ב־'+count+' חודשי פעילות.',section);
   const grid=document.createElement('dl');grid.className='unit-details';
   for(const [label,value] of [['צריכה ממוצעת',kwh.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2})+' קוט״ש'],['חיוב ממוצע כיום (0.63 ₪ לקוט״ש)',money(average('amount'))],['לפי 1 ₪ לקוט״ש',money(kwh)],['לפי 1.50 ₪ לקוט״ש',money(kwh*1.5)]]){
     const cell=document.createElement('div');text('dt',label,cell);text('dd',value,cell);grid.appendChild(cell);
@@ -133,11 +134,11 @@ async function load(){
     box.appendChild(metrics);
     const detail=document.createElement('details');detail.open=true;text('summary','פירוט תשלומים חודשי',detail);
     const table=document.createElement('table');table.className='payment-table';const head=document.createElement('thead');const row=document.createElement('tr');const ev=a.data.electricVehicle;
-    ['חודש','שולם ועד בית',...(ev?['רכב חשמלי']:[]),'מספר קבלה'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');
+    ['חודש','שולם ועד בית',...(ev?['רכב חשמלי']:[]),'מספר קבלה','הערות'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');
     (a.data.monthlyPayments||[]).forEach((v,i)=>{
       const r=document.createElement('tr');const month=text('th',monthsHE[i],r);month.scope='row';const amount=text('td',money(v),r);amount.className=Number(v)>0?'paid':'unpaid';
       if(ev){const value=(ev.months||[])[i];const cell=text('td','',r);text('bdi',value===null||value===undefined?'—':money(value),cell).dir='rtl';if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';cell.classList.add('ev-payment')}const note=(ev.monthNotes||[])[i];if(note){cell.classList.add('ev-payment');const consumption=text('bdi',note,cell);consumption.dir='rtl';consumption.className='ev-consumption'}}
-      const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';body.appendChild(r)
+      const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';text('td',a.data.paymentNotes?.[i+1]||'—',r);body.appendChild(r)
     });
     table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(ev,box);evComparison(ev,a.data.collection?.throughMonth??0,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
   }
