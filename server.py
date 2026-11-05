@@ -81,10 +81,32 @@ def provider_reason(error):
         pass
     return 'provider_rejected'
 
+def rtl_email_html(title,body):
+    import html
+    return ('<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"></head>'
+        '<body dir="rtl" style="margin:0;padding:20px;background:#f6f1e9;direction:rtl;text-align:right">'
+        '<table role="presentation" width="100%" dir="rtl" style="direction:rtl;text-align:right"><tr>'
+        '<td align="right" dir="rtl" style="direction:rtl;text-align:right">'
+        '<table role="presentation" width="100%" dir="rtl" style="max-width:640px;direction:rtl;text-align:right;background:#fffdf9;border:1px solid #e3d6c3;border-radius:12px">'
+        '<tr><td dir="rtl" align="right" style="padding:28px;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#38281f;direction:rtl;text-align:right">'
+        '<h2 dir="rtl" style="margin:0 0 18px;text-align:right;direction:rtl">'+html.escape(title)+'</h2>'
+        +body+'</td></tr></table></td></tr></table></body></html>')
+
+def rtl_email_text(value):
+    return '\n'.join('\u200f'+line if line else '' for line in value.split('\n'))
+
 def send_email(address, code):
+    import html
+    otp_body=('<p dir="rtl" style="text-align:right;direction:rtl">קוד הכניסה שלך:</p>'
+        '<p dir="rtl" style="text-align:right"><span dir="ltr" style="display:inline-block;direction:ltr;unicode-bidi:isolate;font-size:32px;font-weight:bold;letter-spacing:5px">'
+        +html.escape(str(code))+'</span></p>'
+        '<p dir="rtl" style="text-align:right;direction:rtl">הקוד תקף ל־10 דקות ולשימוש אחד. אין להעביר אותו לאחרים.</p>'
+        '<p dir="rtl" style="text-align:right;direction:rtl">אם לא ביקשת קוד כניסה, אפשר להתעלם מההודעה.</p>')
     payload = {'sender':{'name':'בניין חרוב','email':email(os.environ['EMAIL_FROM'])},
                'to':[{'email':address}], 'subject':'קוד כניסה לפורטל בניין חרוב',
                'textContent':f'קוד הכניסה שלך: {code}\nהקוד תקף ל-10 דקות ולשימוש אחד. אין להעביר אותו לאחרים.\nאם לא ביקשת קוד כניסה, אפשר להתעלם מההודעה.'}
+    payload['htmlContent']=rtl_email_html('קוד כניסה לפורטל בניין חרוב',otp_body)
+    payload['textContent']=rtl_email_text(payload['textContent'].replace(str(code),'\u2066'+str(code)+'\u2069',1))
     req = Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),
                   headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})
     try:
@@ -110,6 +132,11 @@ def send_notice_emails(notice,addresses,key):
     if notice.get('email_only'):
         text=notice['body']+'\n\nלכניסה לפורטל הדיירים: '+link+'\n\nועד בניין חרוב · שתולים 57 תל אביב'
         content='<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;color:#38281f;padding:24px"><h2>'+html.escape(title)+'</h2><div style="white-space:pre-wrap">'+html.escape(notice['body'])+'</div><p><a href="'+html.escape(link,quote=True)+'">כניסה לפורטל הדיירים</a></p><small>ועד בניין חרוב · שתולים 57 תל אביב</small></body></html>'
+    inner=re.search(r'<body[^>]*>(.*?)</body>',content,re.S).group(1)
+    inner=re.sub(r'^<h2>.*?</h2>','',inner,count=1,flags=re.S)
+    inner=inner.replace('<div style="white-space:pre-wrap">','<div dir="rtl" style="white-space:pre-wrap;direction:rtl;text-align:right">')
+    content=rtl_email_html(title,inner)
+    text=rtl_email_text(text)
     payload={'sender':{'name':'ועד בניין חרוב','email':email(os.environ['EMAIL_FROM'])},'subject':'הודעה חדשה מוועד הבניין: '+title,'textContent':text,'htmlContent':content,'headers':{'idempotencyKey':key},'messageVersions':[{'to':[{'email':email(a)}]} for a in addresses]}
     if len(addresses)>1000:raise notice_mail.Rejected()
     req=Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})

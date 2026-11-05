@@ -52,3 +52,21 @@ class EmailOnlyTests(unittest.TestCase):
             self.assertIn('&lt;private&gt;',payload['htmlContent'])
             self.assertNotIn('מחכה לך',payload['textContent'])
             self.assertIn(server.ORIGIN,payload['textContent'])
+    def test_rtl_for_otp_and_both_notice_modes(self):
+        class Response:
+            status=201
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+        with patch('server.urlopen',return_value=Response()) as send:
+            server.send_email('owner@example.com','012345')
+            otp=json.loads(send.call_args.args[0].data)
+            self.assertIn('dir="rtl"',otp['htmlContent'])
+            self.assertIn('align="right"',otp['htmlContent'])
+            self.assertIn('dir="ltr"',otp['htmlContent'])
+            self.assertIn('012345',otp['htmlContent'])
+            for mode in (False,True):
+                server.send_notice_emails({'title':'שלום','body':'תוכן ההודעה','email_only':mode},['owner@example.com'],'key')
+                data=json.loads(send.call_args.args[0].data)
+                self.assertIn('align="right"',data['htmlContent'])
+                self.assertIn('text-align:right',data['htmlContent'])
+                self.assertTrue(data['textContent'].startswith('\u200f'))
