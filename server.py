@@ -1,6 +1,7 @@
 """Private tenant portal. Run behind HTTPS with gunicorn server:app."""
 import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging, base64
 from http.cookies import SimpleCookie
+from html import escape
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, quote
 from urllib.error import HTTPError, URLError
@@ -290,7 +291,8 @@ def app(env, start):
         p=session['email']
         if path.startswith('/api/receipts/') and method=='GET':
             download=path.endswith('/download')
-            ident=path.rsplit('/',2)[-2] if download else path.rsplit('/',1)[-1]
+            viewing=path.endswith('/view')
+            ident=path.rsplit('/',2)[-2] if download or viewing else path.rsplit('/',1)[-1]
             if not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'הקבלה לא נמצאה'},'404 Not Found')
             row=c.execute('SELECT * FROM receipts WHERE id=?',(ident,)).fetchone()
             permitted=False
@@ -298,9 +300,16 @@ def app(env, start):
                 roles=[m['role'] for m in c.execute('SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1',(p,row['apt'])).fetchall()]
                 permitted=can_preview(c,p) or bool(roles and receipts.permitted(row['kind'],row['apt'],roles))
             if not permitted:return respond({'error':'הקבלה לא נמצאה'},'404 Not Found')
+            if not download and not viewing:
+                number=escape(row['number'])
+                url='/api/receipts/'+ident
+                return respond('''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>קבלה '''+number+'''</title>
+<style>body{margin:0;background:#f5f0e7;color:#38291e;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100dvh}main{box-sizing:border-box;width:min(92%,480px);background:#fffdf9;padding:32px 24px;text-align:center;border:1px solid #dccdb7;border-radius:16px}h1{font-size:24px}p{line-height:1.6}nav{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}a{box-sizing:border-box;display:block;padding:15px 24px;border:1px solid #745638;border-radius:8px;color:#fff;background:#61472f;font-weight:bold;text-decoration:none;min-width:160px}a:last-child{background:#eee4d5;color:#38291e}a:focus-visible{outline:3px solid #27804f;outline-offset:4px}</style></head>
+<body><main><h1>קבלה <bdi>'''+number+'''</bdi></h1><p>בחרו כיצד לפתוח את הקבלה</p><nav aria-label="אפשרויות קבלה"><a href="'''+url+'''/view" target="_blank" rel="noopener">צפייה בקבלה</a><a href="'''+url+'''/download" download>הורדת הקבלה</a></nav></main></body></html>''',kind='text/html; charset=utf-8')
             raw=base64.b64decode(row['pdf'])
             if hashlib.sha256(raw).hexdigest()!=row['sha256']:raise ValueError('Receipt integrity failure')
-            return respond(raw,kind='application/pdf',extra=[('Content-Disposition',('attachment' if download else 'inline')+'; filename="'+row['number']+'.pdf"'),('Content-Security-Policy',"default-src 'none'; sandbox")])
+            return respond(raw,kind='application/pdf',extra=[('Content-Disposition',('attachment' if download else 'inline')+'; filename="'+row['number']+'.pdf"')])
         if path=='/api/services' and method=='GET':
             return respond({'disclaimer':services.DISCLAIMER,'providers':[dict(r) for r in c.execute('SELECT id,name,category,phone,url,notes FROM service_providers WHERE active=1 ORDER BY category,name').fetchall()]})
         if path=='/api/notices/view' and method=='POST':
