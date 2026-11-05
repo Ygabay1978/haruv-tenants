@@ -309,6 +309,8 @@ def app(env, start):
 <body><main><h1>קבלה <bdi>'''+number+'''</bdi></h1><p>בחרו כיצד לפתוח את הקבלה</p><nav aria-label="אפשרויות קבלה"><a href="'''+url+'''/view" target="_blank" rel="noopener">צפייה בקבלה</a><a href="'''+url+'''/download" download>הורדת הקבלה</a></nav></main></body></html>''',kind='text/html; charset=utf-8')
             raw=base64.b64decode(row['pdf'])
             if hashlib.sha256(raw).hexdigest()!=row['sha256']:raise ValueError('Receipt integrity failure')
+            if viewing:
+                return respond(receipts.receipt_docs.preview_html(raw,row['number'],'/api/receipts/'+ident),kind='text/html; charset=utf-8')
             return respond(raw,kind='application/pdf',extra=[('Content-Disposition',('attachment' if download else 'inline')+'; filename="'+row['number']+'.pdf"')])
         if path=='/api/services' and method=='GET':
             return respond({'disclaimer':services.DISCLAIMER,'providers':[dict(r) for r in c.execute('SELECT id,name,category,phone,url,notes FROM service_providers WHERE active=1 ORDER BY category,name').fetchall()]})

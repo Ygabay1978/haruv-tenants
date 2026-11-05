@@ -2,6 +2,9 @@
 from io import BytesIO
 from pathlib import Path
 import re
+import base64
+import threading
+from html import escape
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -14,6 +17,33 @@ W,H=A4
 ink='#37271F';oak='#886342';line='#DDD1BF';muted='#756B60';green='#315F4C';cream='#F5EFE5'
 months=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
 short=['ינו׳','פבר׳','מרץ','אפר׳','מאי','יוני','יולי','אוג׳','ספט׳','אוק׳','נוב׳','דצמ׳']
+_preview_lock=threading.Lock()
+
+def preview_html(raw,number,url):
+ """Display the issued PDF as page images, independent of browser PDF settings."""
+ import pypdfium2 as pdfium
+ images=[]
+ # PDFium is not thread-safe. Keep all native work within one process lock.
+ with _preview_lock:
+  document=pdfium.PdfDocument(raw)
+  try:
+   for index in range(len(document)):
+    page=document[index]
+    try:
+     bitmap=page.render(scale=2)
+     try:
+      stream=BytesIO();bitmap.to_pil().save(stream,format='PNG')
+      images.append('<img alt="קבלה '+escape(number)+' · עמוד '+str(index+1)+'" src="data:image/png;base64,'+base64.b64encode(stream.getvalue()).decode()+'">')
+     finally:bitmap.close()
+    finally:page.close()
+  finally:document.close()
+ return '''<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>צפייה בקבלה '''+escape(number)+'''</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#f5f0e7;color:#38291e;font-family:Arial,sans-serif}header{position:sticky;top:0;z-index:1;background:#fffdf9;border-bottom:1px solid #dccdb7;padding:12px 16px;text-align:center}h1{font-size:20px;margin:0 0 12px}nav{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}button,a{font:inherit;font-weight:bold;min-height:44px;padding:10px 16px;border:1px solid #806044;border-radius:8px;color:#38291e;background:#eee4d5;text-decoration:none;cursor:pointer}a{background:#61472f;color:white}button:focus-visible,a:focus-visible{outline:3px solid #27804f;outline-offset:2px}main{overflow:auto;padding:16px 8px;direction:ltr}.pages{width:100%;max-width:850px;margin:auto}.pages img{display:block;width:100%;height:auto;background:white;margin-bottom:16px;box-shadow:0 2px 12px #38291e20}@media(max-width:480px){header{padding:10px 8px}h1{font-size:17px}button,a{padding:10px 12px;font-size:14px}}</style></head><body>
+<header><h1>קבלה <bdi>'''+escape(number)+'''</bdi></h1><nav aria-label="כלי צפייה בקבלה"><button type="button" id="zoom-in">הגדלה +</button><button type="button" id="zoom-out">הקטנה −</button><button type="button" id="fit">התאמה למסך</button><a href="'''+escape(url,quote=True)+'''/download" download>הורדת PDF</a></nav></header>
+<main aria-label="תצוגת הקבלה"><div class="pages">'''+''.join(images)+'''</div></main>
+<script>const pages=document.querySelector('.pages');let width=0;document.getElementById('zoom-in').onclick=()=>{width=Math.min(2400,(width||pages.getBoundingClientRect().width)*1.25);pages.style.maxWidth='none';pages.style.width=width+'px'};document.getElementById('zoom-out').onclick=()=>{width=Math.max(280,(width||pages.getBoundingClientRect().width)/1.25);pages.style.maxWidth='none';pages.style.width=width+'px'};document.getElementById('fit').onclick=()=>{width=0;pages.style.width='100%';pages.style.maxWidth='850px'};</script></body></html>'''
+
 def render(e):
  d=e['snapshot'];apt=e['apt'];ev=d.get('electricVehicle') if e['kind']=='ev' else None
  stream=BytesIO();c=canvas.Canvas(stream,pagesize=A4,invariant=1);c.setTitle('קבלה '+e['number']);c.setAuthor('ועד הבית חרוב')
