@@ -34,11 +34,22 @@ class ResidentFeatureTests(unittest.TestCase):
             rows=json.loads(self.request('/api/apartments',cookie=cookie)['body'])['apartments']
             self.assertEqual({a['apt'] for a in rows if 'electricVehicle' in a['data']},{45,50} if role=='owner' else {1})
             self.assertTrue(all(a['data']['monthly']==123 for a in rows))
+            self.assertTrue(all(a['data']['hasElectricVehicle'] is True for a in rows))
         cookie=self.session('owner@example.com')
         for apt,role,visible in [(1,'owner',False),(1,'tenant',True),(45,'tenant',False),(50,'owner',True),(50,'committee',False)]:
             response=self.request('/api/preview',{'apt':apt,'role':role},cookie=cookie)
             data=json.loads(response['body'])['apartments'][0]['data']
             self.assertEqual('electricVehicle' in data,visible)
+            self.assertIs(data['hasElectricVehicle'],True)
+            if not visible:
+                self.assertNotIn('Private EV',json.dumps(data))
+                self.assertNotIn('peerAverage',json.dumps(data))
+    def test_ev_status_is_false_when_apartment_has_no_ev(self):
+        for role in ('owner','tenant'):
+            data=portal_rules.resident_payload(json.dumps({'monthly':123}),1,[role])
+            self.assertIs(data['hasElectricVehicle'],False)
+            self.assertNotIn('electricVehicle',data)
+
     def test_preview_requires_explicit_viewer_and_remains_read_only(self):
         cookie=self.session('owner@example.com')
         self.assertTrue(self.request('/api/viewer/context',cookie=cookie)['status'].startswith('403'))

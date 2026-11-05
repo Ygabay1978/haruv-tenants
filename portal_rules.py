@@ -19,6 +19,7 @@ def resident_payload(raw, apt, roles):
     result={k:data[k] for k in keys if k in data}
     if 'monthlyReceipts' in result:result['monthlyReceipts']=[str(v)[:80] if v is not None else '' for v in result['monthlyReceipts'][:12]] if isinstance(result['monthlyReceipts'],list) else []
     required_role='owner' if apt in (45,50) else 'tenant'
+    result['hasElectricVehicle']=bool(data.get('electricVehicle'))
     result['canViewElectricVehicle']=required_role in roles
     if not result['canViewElectricVehicle']:result.pop('electricVehicle',None)
     result['collection']=collection_status(result)
