@@ -117,7 +117,7 @@ def render(e):
  if ev:
   chart('חיובי טעינה לפי חודש',ev['months'],short,65,166,214,38,'ש״ח',green);chart('צריכת טעינה לפי חודש',kwh,short,335,166,214,38,'קוט״ש',green)
   txt('מיועד לבעלי הרכב בלבד, ללא העתק לבעלי הדירה.',W/2,131,8,muted,align='center')
-  txt('יש להשלים תאריך, אמצעי תשלום ואסמכתא לפני הפקה רשמית.',W/2,117,7.5,oak,align='center')
+  txt('התקבול מתייחס לחודש המפורט בראש הקבלה.',W/2,117,7.5,oak,align='center')
  else:
   rect(36,162,W-72,65,fill='#F5EFE5',r=4)
   if not d['tenants']:

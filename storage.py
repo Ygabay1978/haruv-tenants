@@ -2,8 +2,10 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('receipts','receipt_sequences','apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads', 'notice_email_only')
+TABLES = ('receipt_revisions','receipts','receipt_sequences','apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads', 'notice_email_only')
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS receipt_revisions(id TEXT PRIMARY KEY,receipt_id TEXT NOT NULL,old_source_key TEXT NOT NULL,payload TEXT NOT NULL,pdf TEXT NOT NULL,sha256 TEXT NOT NULL,updated BIGINT NOT NULL,actor TEXT NOT NULL,new_reference TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS receipt_revision_source ON receipt_revisions(old_source_key);
 CREATE TABLE IF NOT EXISTS receipt_sequences(year INTEGER PRIMARY KEY,last_number INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY,number TEXT NOT NULL UNIQUE,apt INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('dues','ev')),source_key TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,pdf TEXT NOT NULL,sha256 TEXT NOT NULL,issued BIGINT NOT NULL);
 

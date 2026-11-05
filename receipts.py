@@ -45,7 +45,7 @@ def issue(c,body,issuer):
         elif any(m>len(snapshot.get('monthlyPayments',[])) or not snapshot['monthlyPayments'][m-1] for m in months):raise ValueError('החודשים אינם מסומנים כמשולמים')
         source='bank:'+method+':'+reference+':'+paid_date.isoformat() if method!='מזומן' else f'cash:{apt}:{paid_date.isoformat()}:{amount}:{months}'
         source_key=hashlib.sha256(source.encode()).hexdigest()
-        existing=c.execute('SELECT * FROM receipts WHERE source_key=?',(source_key,)).fetchone()
+        existing=c.execute('SELECT * FROM receipts WHERE source_key=? OR id IN (SELECT receipt_id FROM receipt_revisions WHERE old_source_key=?)',(source_key,source_key)).fetchone()
         if existing:
             p=json.loads(existing['payload'])
             if existing['apt']!=apt or p['amount']!=float(amount) or p['months']!=months or existing['kind']!=kind:raise ValueError('האסמכתא כבר משויכת לקבלה אחרת')
@@ -63,3 +63,25 @@ def issue(c,body,issuer):
         ident=secrets.token_hex(16)
         c.execute('INSERT INTO receipts(id,number,apt,kind,source_key,payload,pdf,sha256,issued) VALUES(?,?,?,?,?,?,?,?,?)',(ident,number,apt,kind,source_key,json.dumps(payload,ensure_ascii=False),base64.b64encode(pdf).decode(),hashlib.sha256(pdf).hexdigest(),stamp))
         return {'id':ident,'number':number,'created':True}
+
+
+def amend_reference(c,body,actor):
+    ident=body.get('id');reference=body.get('reference');expected=body.get('expectedReference')
+    if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or not isinstance(reference,str) or not re.fullmatch(r'[0-9]{1,30}',reference):raise ValueError('יש להזין מספר אסמכתא בנקאית תקין')
+    with c.transaction(lock='receipt-issuance'):
+        row=c.execute('SELECT * FROM receipts WHERE id=?',(ident,)).fetchone()
+        if not row:raise ValueError('הקבלה לא נמצאה')
+        payload=json.loads(row['payload']);new_reference='אסמכתא: '+reference
+        if payload['reference']==new_reference:return dict(metadata(row),updated=False)
+        if payload['reference']!=expected:raise ValueError('פרטי הקבלה השתנו. יש לרענן לפני העדכון')
+        if payload['method']=='מזומן':raise ValueError('לא ניתן להוסיף אסמכתא בנקאית לקבלת מזומן')
+        if hashlib.sha256(base64.b64decode(row['pdf'])).hexdigest()!=row['sha256']:raise ValueError('בדיקת תקינות הקבלה נכשלה')
+        source='bank:'+payload['method']+':'+reference+':'+payload['paymentDate']
+        source_key=hashlib.sha256(source.encode()).hexdigest()
+        other=c.execute('SELECT id FROM receipts WHERE source_key=? OR id IN (SELECT receipt_id FROM receipt_revisions WHERE old_source_key=?)',(source_key,source_key)).fetchone()
+        if other and other['id']!=ident:raise ValueError('האסמכתא משויכת לקבלה אחרת')
+        payload['reference']=new_reference
+        pdf=receipt_docs.render(payload)
+        c.execute('INSERT INTO receipt_revisions VALUES(?,?,?,?,?,?,?,?,?)',(secrets.token_hex(16),ident,row['source_key'],row['payload'],row['pdf'],row['sha256'],int(time.time()),actor,new_reference))
+        c.execute('UPDATE receipts SET source_key=?,payload=?,pdf=?,sha256=? WHERE id=?',(source_key,json.dumps(payload,ensure_ascii=False),base64.b64encode(pdf).decode(),hashlib.sha256(pdf).hexdigest(),ident))
+        return {'id':ident,'number':row['number'],'updated':True,'reference':new_reference}

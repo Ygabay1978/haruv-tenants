@@ -365,11 +365,14 @@ def app(env, start):
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/receipts/reference' and method=='POST':
+                try:return respond(receipts.amend_reference(c,body,p))
+                except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
             if path=='/api/admin/receipts/issue' and method=='POST':
                 try:return respond(receipts.issue(c,body,p))
                 except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
             if path=='/api/admin/receipts' and method=='GET':
-                return respond({'receipts':[dict(receipts.metadata(r),apt=r['apt']) for r in c.execute('SELECT id,number,apt,kind,payload,issued FROM receipts ORDER BY issued DESC,number DESC').fetchall()]})
+                return respond({'receipts':[dict(receipts.metadata(r),apt=r['apt'],reference=json.loads(r['payload'])['reference']) for r in c.execute('SELECT id,number,apt,kind,payload,issued FROM receipts ORDER BY issued DESC,number DESC').fetchall()]})
             if path=='/api/admin/services' and method=='GET':
                 return respond({'providers':[dict(r) for r in c.execute('SELECT * FROM service_providers ORDER BY active DESC,category,name').fetchall()]})
             if path=='/api/admin/services' and method=='POST':
