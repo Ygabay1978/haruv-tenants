@@ -18,9 +18,18 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(result['number'],'H-2026-000001');self.assertEqual(result['id'],again['id']);self.assertFalse(again['created'])
         self.assertEqual(self.c.execute('SELECT count(*) AS n FROM receipts').fetchone()['n'],1)
         path='/api/receipts/'+result['id']
-        self.assertTrue(self.request(path,cookie=self.session('tenant@example.com'))['status'].startswith('200'))
-        self.assertTrue(self.request(path,cookie=self.session('other@example.com'))['status'].startswith('404'))
-        self.assertTrue(self.request(path)['status'].startswith('401'))
+        choice=self.request(path,cookie=self.session('tenant@example.com'))
+        self.assertTrue(choice['status'].startswith('200'))
+        self.assertIn((path+'/view').encode(),choice['body'])
+        self.assertIn((path+'/download').encode(),choice['body'])
+        self.assertNotIn(b'<iframe',choice['body'])
+        for suffix in ('','/view','/download'):
+            self.assertTrue(self.request(path+suffix,cookie=self.session('other@example.com'))['status'].startswith('404'))
+            self.assertTrue(self.request(path+suffix)['status'].startswith('401'))
+        for suffix,disposition in (('/view','inline'),('/download','attachment')):
+            response=self.request(path+suffix,cookie=self.session('tenant@example.com'))
+            self.assertEqual(response['body'],b'%PDF-1.7 immutable')
+            self.assertTrue(dict(response['headers'])['Content-Disposition'].startswith(disposition))
         listed=json.loads(self.request('/api/apartments',cookie=self.session('tenant@example.com'))['body'])
         self.assertEqual(listed['apartments'][0]['data']['receiptFiles'][0]['number'],result['number'])
     def test_residents_cannot_issue_and_missing_fields_do_not_consume_numbers(self):
