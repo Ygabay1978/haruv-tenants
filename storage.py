@@ -2,8 +2,9 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads')
+TABLES = ('apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads', 'notice_email_only')
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS notice_email_only(notice_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(notice_id,version));
 CREATE TABLE IF NOT EXISTS notice_reads(notice_id TEXT NOT NULL,version INTEGER NOT NULL,email TEXT NOT NULL,apt INTEGER NOT NULL,first_seen BIGINT NOT NULL,last_seen BIGINT NOT NULL,PRIMARY KEY(notice_id,version,email,apt));
 CREATE TABLE IF NOT EXISTS regulations(id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL);
 

@@ -41,6 +41,7 @@ def report(c,include_committee=False):
         recipients.sort(key=lambda r:(r['first_seen'] is None,-(r['first_seen'] or 0),r['email']))
         job=c.execute('SELECT state,recipients FROM notice_notifications WHERE notice_id=? AND version=?',(n['id'],n['version'])).fetchone()
         result.append({'id':n['id'],'version':n['version'],'title':n['title'],'active':bool(n['active']),
+            'email_only':c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(n['id'],n['version'])).fetchone() is not None,
             'updated':n['updated'],'audience':n['audience'],'apt':n['apt'],'notification':dict(job) if job else None,
             'viewed':sum(r['first_seen'] is not None for r in recipients),'recipients':recipients})
     return result

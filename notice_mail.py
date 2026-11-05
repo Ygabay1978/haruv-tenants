@@ -27,7 +27,9 @@ def deliver(c,ident,version,sender):
         if not job:return {'state':'not_queued','recipients':0}
         if job['state'] not in ('pending','failed'):return {'state':job['state'],'recipients':job['recipients']}
         notice=c.execute('SELECT * FROM notices WHERE id=?',(ident,)).fetchone()
-        if not notice or not notice['active'] or notice['version']!=version:
+        email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(ident,version)).fetchone() is not None
+        archived=c.execute('SELECT 1 FROM notice_archives WHERE notice_id=?',(ident,)).fetchone() is not None
+        if not notice or archived or (not notice['active'] and not email_only) or notice['version']!=version:
             c.execute("UPDATE notice_notifications SET state='cancelled',updated=? WHERE notice_id=? AND version=?",(int(time.time()),ident,version))
             return {'state':'cancelled','recipients':0}
         addresses=recipients(c,notice)
@@ -36,7 +38,7 @@ def deliver(c,ident,version,sender):
     if not addresses:return {'state':'empty','recipients':0}
     # Same content/recipient batch always gets the same provider idempotency UUID.
     key=str(uuid.uuid5(uuid.NAMESPACE_URL,'haruv:'+ident+':'+str(version)+':'+','.join(addresses)))
-    try:sender(dict(notice),addresses,key);state='accepted'
+    try:sender(dict(notice,email_only=email_only),addresses,key);state='accepted'
     except Rejected:state='failed'
     except Exception:state='unknown'
     c.execute('UPDATE notice_notifications SET state=?,updated=? WHERE notice_id=? AND version=?',(state,int(time.time()),ident,version));c.commit()

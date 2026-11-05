@@ -107,6 +107,9 @@ def send_notice_emails(notice,addresses,key):
     link=ORIGIN.rstrip('/')+'/'
     text=f'הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־{title}.\n\nלצפייה בהודעה, היכנסו לפורטל: {link}\nהכניסה באמצעות קוד אישי למייל הרשום במערכת.\n\nועד בניין חרוב · שתולים 57 תל אביב'
     content=f'<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;background:#f6f1e9;color:#38281f;padding:28px"><h2>בניין חרוב</h2><p>הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־<strong>{html.escape(title)}</strong>.</p><p><a href="{html.escape(link,quote=True)}" style="display:inline-block;background:#866141;color:white;padding:14px 24px;text-decoration:none;border-radius:5px">כניסה לפורטל וצפייה בהודעה</a></p><p>הכניסה באמצעות קוד אישי למייל הרשום במערכת.</p><small>שתולים 57 תל אביב · ועד הבית</small></body></html>'
+    if notice.get('email_only'):
+        text=notice['body']+'\n\nלכניסה לפורטל הדיירים: '+link+'\n\nועד בניין חרוב · שתולים 57 תל אביב'
+        content='<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;color:#38281f;padding:24px"><h2>'+html.escape(title)+'</h2><div style="white-space:pre-wrap">'+html.escape(notice['body'])+'</div><p><a href="'+html.escape(link,quote=True)+'">כניסה לפורטל הדיירים</a></p><small>ועד בניין חרוב · שתולים 57 תל אביב</small></body></html>'
     payload={'sender':{'name':'ועד בניין חרוב','email':email(os.environ['EMAIL_FROM'])},'subject':'הודעה חדשה מוועד הבניין: '+title,'textContent':text,'htmlContent':content,'headers':{'idempotencyKey':key},'messageVersions':[{'to':[{'email':email(a)}]} for a in addresses]}
     if len(addresses)>1000:raise notice_mail.Rejected()
     req=Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(payload).encode(),headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json','Accept':'application/json'})
@@ -366,7 +369,7 @@ def app(env, start):
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/admin/notices' and method=='GET':
-                return respond({'notices':[dict(r,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
+                return respond({'notices':[dict(r,email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(r['id'],r['version'])).fetchone() is not None,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
             if path=='/api/admin/notifications/retry' and method=='POST':
                 ident=body.get('id');version=body.get('version')
                 if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
@@ -374,11 +377,16 @@ def app(env, start):
                 return respond({'notification':notice_mail.deliver(c,ident,version,send_notice_emails)})
             if path=='/api/admin/notices' and method=='POST':
                 if not limit(c,'admin-change:'+p,200,3600):return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
+                delivery=body.get('delivery')
+                if delivery is not None and delivery not in ('portal','email','draft'):return respond({'error':'מצב שליחה לא תקין'},'400 Bad Request')
+                email_only=delivery=='email'
+                if delivery is not None:body={**body,'active':int(delivery=='portal')}
                 try:values=portal_rules.notice_input(body,c)
                 except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
                 ident=body.get('id');stamp=int(time.time());changed=True;version=1
                 try:chosen=attachments.validate_selection(c,body['attachments'],ident) if 'attachments' in body else None
                 except (ValueError,TypeError):return respond({'error':'יש לבחור עד 5 קבצים תקינים להודעה זו'},'400 Bad Request')
+                if email_only and (chosen or (chosen is None and ident and attachments.list_for(c,ident))):return respond({'error':'בשליחה במייל בלבד יש להסיר קבצים מצורפים. תוכן ההודעה והקישור לפורטל יישלחו במייל.'},'400 Bad Request')
                 if ident:
                     if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'מזהה לא תקין'},'400 Bad Request')
                     requested=body.get('version')
@@ -387,18 +395,21 @@ def app(env, start):
                         old=c.execute('SELECT * FROM notices WHERE id=?',(ident,)).fetchone()
                         if not old or old['version']!=requested:return respond({'error':'ההודעה השתנתה. רעננו לפני שמירה'},'409 Conflict')
                         if c.execute('SELECT 1 FROM notice_archives WHERE notice_id=?',(ident,)).fetchone():return respond({'error':'יש לשחזר את ההודעה לפני עריכה'},'409 Conflict')
-                        changed=tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values) or (chosen is not None and sorted(chosen)!=sorted(a['id'] for a in attachments.list_for(c,ident)))
+                        old_email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(ident,requested)).fetchone() is not None
+                        changed=old_email_only!=email_only or tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values) or (chosen is not None and sorted(chosen)!=sorted(a['id'] for a in attachments.list_for(c,ident)))
                         version=requested+int(changed)
                         c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=? WHERE id=?',(*values,stamp,version,ident))
                         if chosen is not None:attachments.bind(c,ident,chosen)
-                        if changed and values[-1]:notice_mail.queue(c,ident,version)
+                        if email_only:c.execute('INSERT INTO notice_email_only VALUES(?,?) ON CONFLICT(notice_id,version) DO NOTHING',(ident,version))
+                        if changed and (values[-1] or email_only):notice_mail.queue(c,ident,version)
                 else:
                     ident=secrets.token_hex(16)
                     with c.transaction(lock='notice:'+ident):
                         c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp))
                         if chosen is not None:attachments.bind(c,ident,chosen)
-                        if values[-1]:notice_mail.queue(c,ident,version)
-                notification=notice_mail.deliver(c,ident,version,send_notice_emails) if changed and values[-1] else {'state':'not_published' if not values[-1] else 'unchanged','recipients':0}
+                        if email_only:c.execute('INSERT INTO notice_email_only VALUES(?,?) ON CONFLICT(notice_id,version) DO NOTHING',(ident,version))
+                        if values[-1] or email_only:notice_mail.queue(c,ident,version)
+                notification=notice_mail.deliver(c,ident,version,send_notice_emails) if changed and (values[-1] or email_only) else {'state':'not_published' if not values[-1] and not email_only else 'unchanged','recipients':0}
                 return respond({'ok':True,'id':ident,'notification':notification})
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
