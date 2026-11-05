@@ -13,6 +13,15 @@ class ResidentFeatureTests(unittest.TestCase):
         self.mail_patch=patch('server.send_notice_emails');self.mailer=self.mail_patch.start();self.addCleanup(self.mail_patch.stop)
         with self.c:
             for table in ('notices','administrators'):self.c.execute('DELETE FROM '+table)
+    def test_short_notes_keep_date_method_and_month_range_without_mutating_source(self):
+        value='תאריך הפקדה: 05/11/2026\nאמצעי תשלום: מזומן\nסכום ההפקדה: 3,820 ₪\nעבור חודשים יולי–דצמבר 2026 כולל\nיתרה לזכות הדירה: 10 ₪'
+        raw=json.dumps({'paymentNotes':{'12':value}})
+        data=portal_rules.resident_payload(raw,20,['owner'])
+        self.assertEqual(data['paymentNotes']['12'],'05/11/2026 · מזומן · יולי–דצמבר')
+        self.assertEqual(json.loads(raw)['paymentNotes']['12'],value)
+        self.assertEqual(portal_rules.short_payment_note('שולם ב20.4 במזומן 3810 ₪ עבור ינואר - יוני כולל'),'20.4 · מזומן · ינואר–יוני')
+        self.assertEqual(portal_rules.short_payment_note('תשלום חסר - 152.16 ₪ יתרה לתשלום'),'תשלום חסר - 152.16 ₪ יתרה לתשלום')
+
     def test_public_help_exposes_only_designated_contact_fields(self):
         payload={'ownerContacts':[{'name':'Private Owner','email':'private@example.com'}], 'support':[{'name':'Committee Contact','phone':'0500000000','topics':'Maintenance','email':'hidden@example.com'}]}
         self.c.execute('UPDATE apartments SET payload=? WHERE apt=1',(json.dumps(payload),));self.c.commit()

@@ -219,12 +219,12 @@ async function load(){
     }
     box.appendChild(metrics);
     const detail=document.createElement('details');detail.open=true;text('summary','פירוט תשלומים חודשי',detail);
-    const table=document.createElement('table');table.className='payment-table';const head=document.createElement('thead');const row=document.createElement('tr');
+    const table=document.createElement('table');table.className='payment-table'+(ev?' payment-table-with-ev':'');const head=document.createElement('thead');const row=document.createElement('tr');
     ['חודש','שולם ועד בית',...(ev?['רכב חשמלי']:[]),'מספר קבלה','הערות'].forEach(v=>text('th',v,row));head.appendChild(row);table.appendChild(head);const body=document.createElement('tbody');
     (a.data.monthlyPayments||[]).forEach((v,i)=>{
       const r=document.createElement('tr');const month=text('th',monthsHE[i],r);month.scope='row';const amount=text('td',money(v),r);amount.className=Number(v)>0?'paid':'unpaid';
       if(ev){const value=(ev.months||[])[i];const cell=text('td','',r);text('bdi',value===null||value===undefined?'—':money(value),cell).dir='rtl';if(value!==null&&value!==undefined){const unpaid=!!(ev.monthUnpaid||[])[i];cell.className=unpaid?'unpaid':'paid';cell.classList.add('ev-payment')}const note=(ev.monthNotes||[])[i];if(note){cell.classList.add('ev-payment');const consumption=text('bdi',note,cell);consumption.dir='rtl';consumption.className='ev-consumption'}}
-      const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';text('td',a.data.paymentNotes?.[i+1]||'—',r);body.appendChild(r)
+      const receipt=(a.data.monthlyReceipts||[])[i];const receiptCell=text('td',receipt||'—',r);receiptCell.className='receipt-number';const linked=(a.data.receiptFiles||[]).filter(file=>file.months.includes(i+1));if(linked.length){receiptCell.replaceChildren();for(const file of linked){const link=text('a',file.number,receiptCell);link.href='/api/receipts/'+file.id;link.target='_blank';link.rel='noopener';link.title='פתיחת קבלה';}}const noteCell=text('td','',r);noteCell.className='payment-note';const noteText=text('span',a.data.paymentNotes?.[i+1]||'—',noteCell);noteText.title=noteText.textContent;body.appendChild(r)
     });
     table.appendChild(body);const scroll=document.createElement('div');scroll.className='payment-scroll';scroll.appendChild(table);detail.appendChild(scroll);box.appendChild(detail);observeUsage(detail,'payments',a.apt);evDetails(ev,box);evComparison(ev,a.data.collection?.throughMonth??0,box);$('apartments').appendChild(box);observeUsage(box,'apartment',a.apt)
   }

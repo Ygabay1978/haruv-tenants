@@ -13,6 +13,23 @@ def collection_status(data, now=None):
     level='legal' if monthly>0 and arrears>monthly*3+0.01 else 'payment' if monthly>0 and arrears>monthly*2+0.01 else None
     return {'level':level,'amount':round(arrears,2),'throughMonth':months,'year':year}
 
+def short_payment_note(value):
+    raw=str(value or '').strip()
+    if not raw:return ''
+    # Keep exceptional debt/repair notes intact; only condense payment records.
+    if any(word in raw for word in ('תשלום חסר','סולאר','לתשלום בגין')):return raw
+    date=re.search(r'(?<![0-9])([0-9]{1,2}[./][0-9]{1,2}(?:[./][0-9]{2,4})?)(?![0-9])',raw)
+    method=next((v for v in ('מזומן','העברה בנקאית','הוראת קבע') if v in raw),None)
+    names=('ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר')
+    found=list(dict.fromkeys(re.findall('|'.join(names),raw)))
+    parts=[date.group(1)] if date else []
+    if method:parts.append(method)
+    if len(found)>1:
+        indices=[names.index(n) for n in found]
+        ranged=bool(re.search(r'[-–—־]',raw)) or sorted(indices)==list(range(min(indices),max(indices)+1))
+        parts.append(found[0]+'–'+found[-1] if ranged else ', '.join(found))
+    return ' · '.join(parts) if date and (method or len(found)>1) else raw
+
 def resident_payload(raw, apt, roles):
     data=json.loads(raw)
     keys=('year','monthly','annual','paid','due','monthlyPayments','owners','tenants','ownerContacts','tenantContacts','access','floor','rooms','parking','storage','electricVehicle','support','monthlyReceipts','paymentNotes','solarRepairDue')
@@ -22,6 +39,7 @@ def resident_payload(raw, apt, roles):
     result['hasElectricVehicle']=bool(data.get('electricVehicle'))
     result['canViewElectricVehicle']=required_role in roles
     if not result['canViewElectricVehicle']:result.pop('electricVehicle',None)
+    if isinstance(result.get('paymentNotes'),dict):result['paymentNotes']={k:short_payment_note(v) for k,v in result['paymentNotes'].items()}
     result['collection']=collection_status(result)
     return result
 

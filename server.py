@@ -12,7 +12,7 @@ ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
 import notice_reads
-import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services
+import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services, receipts
 
 def connect():
     return storage.connect(DB)
@@ -180,9 +180,9 @@ def app(env, start):
     path, method = env.get('PATH_INFO','/'), env.get('REQUEST_METHOD','GET')
     if method=='OPTIONS' and path.startswith('/api/'):
         return respond({}) if env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN else respond({'error':'מקור לא מורשה'},'403 Forbidden')
-    if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css','/dashboard-connect','/dashboard-connect.js'):
-        name = {'/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css','/dashboard-connect':'dashboard-connect.html','/dashboard-connect.js':'dashboard-connect.js'}[path]
-        kind = {'/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css','/dashboard-connect':'text/html','/dashboard-connect.js':'application/javascript'}[path]
+    if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css','/dashboard-connect','/dashboard-connect.js','/receipt-issue','/receipts.js'):
+        name = {'/receipt-issue':'receipts.html','/receipts.js':'receipts.js','/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css','/dashboard-connect':'dashboard-connect.html','/dashboard-connect.js':'dashboard-connect.js'}[path]
+        kind = {'/receipt-issue':'text/html','/receipts.js':'application/javascript','/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css','/dashboard-connect':'text/html','/dashboard-connect.js':'application/javascript'}[path]
         return respond((ROOT/'static'/name).read_text(),kind=kind+'; charset=utf-8')
     if path == '/building-photo' and method=='GET':
         db = None
@@ -288,6 +288,19 @@ def app(env, start):
             session = c.execute('SELECT email,expires FROM email_sessions WHERE digest=? AND expires>?',(digest,int(time.time()))).fetchone()
         if not session or not allowed(c,session['email']):return respond({'error':'יש להתחבר מחדש'},'401 Unauthorized')
         p=session['email']
+        if path.startswith('/api/receipts/') and method=='GET':
+            download=path.endswith('/download')
+            ident=path.rsplit('/',2)[-2] if download else path.rsplit('/',1)[-1]
+            if not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'הקבלה לא נמצאה'},'404 Not Found')
+            row=c.execute('SELECT * FROM receipts WHERE id=?',(ident,)).fetchone()
+            permitted=False
+            if row:
+                roles=[m['role'] for m in c.execute('SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1',(p,row['apt'])).fetchall()]
+                permitted=can_preview(c,p) or bool(roles and receipts.permitted(row['kind'],row['apt'],roles))
+            if not permitted:return respond({'error':'הקבלה לא נמצאה'},'404 Not Found')
+            raw=base64.b64decode(row['pdf'])
+            if hashlib.sha256(raw).hexdigest()!=row['sha256']:raise ValueError('Receipt integrity failure')
+            return respond(raw,kind='application/pdf',extra=[('Content-Disposition',('attachment' if download else 'inline')+'; filename="'+row['number']+'.pdf"'),('Content-Security-Policy',"default-src 'none'; sandbox")])
         if path=='/api/services' and method=='GET':
             return respond({'disclaimer':services.DISCLAIMER,'providers':[dict(r) for r in c.execute('SELECT id,name,category,phone,url,notes FROM service_providers WHERE active=1 ORDER BY category,name').fetchall()]})
         if path=='/api/notices/view' and method=='POST':
@@ -337,10 +350,15 @@ def app(env, start):
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
                 notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
-                return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role])),'notices':notices}]})
+                return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':receipts.add_to(c,apt,[role],portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role]))),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
             if not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
+            if path=='/api/admin/receipts/issue' and method=='POST':
+                try:return respond(receipts.issue(c,body,p))
+                except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
+            if path=='/api/admin/receipts' and method=='GET':
+                return respond({'receipts':[dict(receipts.metadata(r),apt=r['apt']) for r in c.execute('SELECT id,number,apt,kind,payload,issued FROM receipts ORDER BY issued DESC,number DESC').fetchall()]})
             if path=='/api/admin/services' and method=='GET':
                 return respond({'providers':[dict(r) for r in c.execute('SELECT * FROM service_providers ORDER BY active DESC,category,name').fetchall()]})
             if path=='/api/admin/services' and method=='POST':
@@ -441,7 +459,7 @@ def app(env, start):
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
-            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':portal_rules.add_ev_benchmark(c,r['apt'],portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(','))),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
+            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':receipts.add_to(c,r['apt'],r['roles'].split(','),portal_rules.add_ev_benchmark(c,r['apt'],portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(',')))),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
         if path == '/api/regulations' and method=='GET':
             row = c.execute('SELECT content FROM regulations WHERE id=1').fetchone()
             return respond({'blocks':json.loads(row['content']) if row else []})
