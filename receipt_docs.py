@@ -72,7 +72,7 @@ def render(e):
  txt(f'ועד בית שנרשם כשולם השנה: {d["paid"]:,.2f} ש״ח',36,449,8,muted,align='left')
  rect(36,415,W-72,22,fill='#E9DFD0',r=2)
  cols=[506,377,245,111] if ev else [475,300,110]
- heads=['חודש','ועד בית | ש״ח','טעינה | ש״ח','קוט״ש'] if ev else ['חודש','ועד בית | ש״ח','הערה']
+ heads=['חודש','ועד בית | ש״ח','טעינה | ש״ח','קוט״ש'] if ev else ['חודש','ועד בית | ש״ח','תאריך תשלום']
  for t,x in zip(heads,cols):txt(t,x,423,8,bold=True,align='center')
  kwh=[]
  for i in range(12):
@@ -83,18 +83,17 @@ def render(e):
    val=ev['months'][i];note=ev['monthNotes'][i] or '';m=re.match(r'\s*([\d.]+)',note);kw=float(m[1]) if m else None;kwh.append(kw)
    num(f'{val:.2f}' if val is not None else '-',cols[2],y,8,green if val is not None and not ev['monthUnpaid'][i] else muted,align='center');num(f'{kw:g}' if kw is not None else '-',cols[3],y,8,align='center')
   else:
-   note='התשלום הנוכחי' if i+1 in e['months'] else '-';txt(note,cols[2],y,7,muted,align='center')
- chart('תשלומי ועד בית לפי חודש',d['monthlyPayments'],short,65,174,484,38,'ש״ח',oak)
+   note=e['date'] if i+1 in e['months'] else '-';txt(note,cols[2],y,7,muted,align='center')
  if ev:
-  chart('חיובי טעינה לפי חודש',ev['months'],short,65,83,214,38,'ש״ח',green);chart('צריכת טעינה לפי חודש',kwh,short,335,83,214,38,'קוט״ש',green)
-  txt('מיועד לבעלי הרכב בלבד, ללא העתק לבעלי הדירה.',W/2,49,8,muted,align='center')
-  txt('יש להשלים תאריך, אמצעי תשלום ואסמכתא לפני הפקה רשמית.',W/2,35,7.5,oak,align='center')
+  chart('חיובי טעינה לפי חודש',ev['months'],short,65,166,214,38,'ש״ח',green);chart('צריכת טעינה לפי חודש',kwh,short,335,166,214,38,'קוט״ש',green)
+  txt('מיועד לבעלי הרכב בלבד, ללא העתק לבעלי הדירה.',W/2,131,8,muted,align='center')
+  txt('יש להשלים תאריך, אמצעי תשלום ואסמכתא לפני הפקה רשמית.',W/2,117,7.5,oak,align='center')
  else:
-  rect(36,77,W-72,65,fill='#F5EFE5',r=4)
+  rect(36,162,W-72,65,fill='#F5EFE5',r=4)
   if not d['tenants']:
-   txt('פרטי התשלום',W/2,123,9,bold=True,align='center');txt(e['note'],W/2,103,8,muted,align='center')
+   txt('פרטי התשלום',W/2,208,9,bold=True,align='center');txt(e['note'],W/2,188,8,muted,align='center')
   else:
-   owner=d['ownerContacts'][0];txt('העתק לבעלי הדירה',W/2,123,9,bold=True,align='center');txt(' | '.join(filter(None,[owner['name'],owner.get('phone'),owner.get('email')])),W/2,103,8,muted,align='center');txt(e['note'],W/2,87,8,muted,align='center')
-  txt('סכומי החודשים משקפים את הרישום בכרטסת; סכום התקבול מוצג בראש המסמך.',W/2,51,7.5,muted,align='center')
+   owner=d['ownerContacts'][0];txt('העתק לבעלי הדירה',W/2,208,9,bold=True,align='center');txt(' | '.join(filter(None,[owner['name'],owner.get('phone'),owner.get('email')])),W/2,188,8,muted,align='center');txt(e['note'],W/2,172,8,muted,align='center')
+  txt('סכומי החודשים משקפים את הרישום בכרטסת; סכום התקבול מוצג בראש המסמך.',W/2,136,7.5,muted,align='center')
  rule(25);txt('הופק ב-'+e['issueDate']+' · ועד הבית חרוב · שתולים 57 תל אביב',W/2,13,7,muted,align='center');c.save()
  return stream.getvalue()
