@@ -9,7 +9,7 @@ const usageObserver=new IntersectionObserver(entries=>{for(const entry of entrie
 for(const event of ['pointerdown','keydown','touchstart','scroll'])document.addEventListener(event,()=>lastInteraction=Date.now(),{passive:true});
 setInterval(()=>{if(document.visibilityState==='visible'&&Date.now()-lastInteraction<5*60000)trackUsage('active')},60000);
 function observeUsage(el,page,apt){el.dataset.usagePage=page;if(apt!==null&&apt!==undefined)el.dataset.usageApt=apt;usageObserver.observe(el)}
-function clear(){usageObserver.disconnect();usageSeen.clear();servicesLoaded=false;activePortalTab='apartment';for(const key of ['apartment','building','services','regulations']){$(key+'-pane').hidden=key!=='apartment';document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key==='apartment'))}usageApt=null;usagePreview=false;previewSelection=null;viewerContextLoaded=false;viewerApartments=[];$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('services-list').replaceChildren();$('services-disclaimer').textContent='';$('login').hidden=false;$('code').value=''; }
+function clear(){noticeViewObserver.disconnect();for(const timer of noticeViewTimers.values())clearTimeout(timer);noticeViewTimers.clear();noticeViewDone.clear();usageObserver.disconnect();usageSeen.clear();servicesLoaded=false;activePortalTab='apartment';for(const key of ['apartment','building','services','regulations']){$(key+'-pane').hidden=key!=='apartment';document.querySelector('[data-portal-tab="'+key+'"]').setAttribute('aria-selected',String(key==='apartment'))}usageApt=null;usagePreview=false;previewSelection=null;viewerContextLoaded=false;viewerApartments=[];$('viewer-controls').hidden=true;document.body.classList.add('login-mode');if($('access-dialog').open)$('access-dialog').close();$('access-detail').replaceChildren(); $('portal').hidden=true;$('help-contacts').replaceChildren();$('summary').removeAttribute('src');$('apartments').replaceChildren();$('services-list').replaceChildren();$('services-disclaimer').textContent='';$('login').hidden=false;$('code').value=''; }
 function people(data,box){
   if(!Array.isArray(data.owners)&&!Array.isArray(data.tenants)) return;
   const group=document.createElement('div');group.className='people';
@@ -56,10 +56,29 @@ function unitDetails(data,box){
   }
   if(data.canViewElectricVehicle){const evCell=document.createElement('div');text('dt','בעל רכב חשמלי',evCell);text('dd',data.electricVehicle?'כן':'לא',evCell);grid.appendChild(evCell)}box.appendChild(grid);
 }
+const noticeViewTimers=new Map(),noticeViewDone=new Set();
+const noticeViewObserver=new IntersectionObserver(entries=>{
+  for(const entry of entries){
+    const card=entry.target,key=card.dataset.noticeId+':'+card.dataset.noticeVersion+':'+card.dataset.noticeApt;
+    clearTimeout(noticeViewTimers.get(card));noticeViewTimers.delete(card);
+    if(!entry.isIntersecting||entry.intersectionRatio<.25||noticeViewDone.has(key))continue;
+    noticeViewTimers.set(card,setTimeout(()=>{
+      noticeViewTimers.delete(card);
+      if(usagePreview||document.visibilityState!=='visible'||$('portal').hidden||!card.isConnected)return;
+      api('/api/notices/view',{id:card.dataset.noticeId,version:Number(card.dataset.noticeVersion),apt:Number(card.dataset.noticeApt)})
+        .then(()=>{noticeViewDone.add(key);noticeViewObserver.unobserve(card)}).catch(()=>{});
+    },1000));
+  }
+},{threshold:[0,.25]});
+function observeNotice(card,n,apt){
+  if(usagePreview||!Number.isInteger(n.version))return;
+  card.dataset.noticeId=n.id;card.dataset.noticeVersion=n.version;card.dataset.noticeApt=apt;
+  noticeViewObserver.observe(card);
+}
 function notices(items,box){
   if(!items||!items.length)return;
   const section=document.createElement('section');section.className='notices';text('h3','עדכונים מוועד הבית',section);
-  for(const n of items){const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';link.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card)}box.appendChild(section);
+  for(const n of items){const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';link.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card);observeNotice(card,n,Number(box.dataset.apt))}box.appendChild(section);
 }
 function collectionWarning(data,box){
   const c=data.collection;if(!c||!c.level)return;

@@ -11,6 +11,7 @@ DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
+import notice_reads
 import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services
 
 def connect():
@@ -137,7 +138,7 @@ def preview_roles(payload):
     return ['committee','owner']+(['tenant'] if has_tenants else [])
 
 def resident_notices(c,address,apt):
-    return [dict(r,attachments=attachments.list_for(c,r['id'])) for r in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+    return [dict(r,attachments=attachments.list_for(c,r['id'])) for r in c.execute("SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -259,6 +260,13 @@ def app(env, start):
         p=session['email']
         if path=='/api/services' and method=='GET':
             return respond({'disclaimer':services.DISCLAIMER,'providers':[dict(r) for r in c.execute('SELECT id,name,category,phone,url,notes FROM service_providers WHERE active=1 ORDER BY category,name').fetchall()]})
+        if path=='/api/notices/view' and method=='POST':
+            ident=body.get('id');version=body.get('version');apt=body.get('apt')
+            if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1 or type(apt) is not int:
+                return respond({'error':'אירוע לא תקין'},'400 Bad Request')
+            if not limit(c,'notice-view:'+p,600,3600):return respond({'error':'נא להמתין'},'429 Too Many Requests')
+            if not notice_reads.record(c,p,ident,version,apt):return respond({'error':'הודעה אינה זמינה'},'404 Not Found')
+            return respond({'ok':True})
         if path=='/api/usage' and method=='POST':
             page=body.get('page');apt=body.get('apt')
             if page not in (*telemetry.PAGES,'active') or (apt is not None and type(apt) is not int):return respond({'error':'אירוע לא תקין'},'400 Bad Request')
@@ -298,7 +306,7 @@ def app(env, start):
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
-                notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
+                notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role])),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
@@ -324,7 +332,9 @@ def app(env, start):
             if path=='/api/admin/monitoring' and method=='POST':
                 days=body.get('days',30);include=body.get('includeCommittee',False)
                 if type(days) is not int or days not in (1,7,30,90) or type(include) is not bool:return respond({'error':'תקופה לא תקינה'},'400 Bad Request')
-                return respond(telemetry.report(c,days,include))
+                data=telemetry.report(c,days,include)
+                data['notices']=notice_reads.report(c,include)
+                return respond(data)
             if path=='/api/admin/attachments/upload' and method=='POST':
                 if not limit(c,'attachment-upload:'+p,40,3600):return respond({'error':'נא להמתין לפני העלאת קבצים נוספים'},'429 Too Many Requests')
                 try:name,mime,raw=attachments.decode(body)

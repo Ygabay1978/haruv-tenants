@@ -85,3 +85,11 @@ Login/logout, coarse browser/platform, authenticated views and downloads are ret
 Owner-only POST /api/admin/directory/import updates contact display names and gym/PAL labels while preserving apartment finances and existing login memberships. It does not provision or revoke login accounts. Missing email/phone values are retained only when the same person can be identified unambiguously. Permission names expand only for a unique token match within that apartment; unmatched or ambiguous names are retained.
 
 The authenticated portal shows gym/PAL names inline and has right-side navigation for the apartment, building summary and service directory. Only the singleton committee administrator can create, edit or unpublish service providers through /api/admin/services; residents get active entries and the informational disclaimer from /api/services. Unpublished records remain recoverable through editing. No fictitious providers are seeded. Links permit only HTTP/HTTPS, and phone links contain digits and telephone punctuation only.
+
+
+Notice visibility monitoring records the authenticated account, apartment, notice version,
+and first/last view timestamps when at least 25% of a notice is visible for one second
+in the active portal. Preview mode is excluded. This is visibility, not proof of
+comprehension or an email open. Only the committee monitoring API exposes readership.
+No earlier views are reconstructed. Current eligible accounts and current notice
+versions are shown; new content versions start a fresh view count.
