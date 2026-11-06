@@ -29,7 +29,8 @@ def deliver(c,ident,version,sender):
         notice=c.execute('SELECT * FROM notices WHERE id=?',(ident,)).fetchone()
         email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(ident,version)).fetchone() is not None
         archived=c.execute('SELECT 1 FROM notice_archives WHERE notice_id=?',(ident,)).fetchone() is not None
-        if not notice or archived or (not notice['active'] and not email_only) or notice['version']!=version:
+        expiry=c.execute('SELECT expires_at FROM notice_expirations WHERE notice_id=?',(ident,)).fetchone()
+        if not notice or archived or (expiry and expiry['expires_at']<=int(time.time()) and not email_only) or (not notice['active'] and not email_only) or notice['version']!=version:
             c.execute("UPDATE notice_notifications SET state='cancelled',updated=? WHERE notice_id=? AND version=?",(int(time.time()),ident,version))
             return {'state':'cancelled','recipients':0}
         addresses=recipients(c,notice)
