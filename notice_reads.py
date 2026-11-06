@@ -3,9 +3,10 @@ import json,time
 
 def record(c,address,ident,version,apt):
     row=c.execute("""SELECT n.id FROM notices n WHERE n.id=? AND n.version=? AND n.active=1
+        AND NOT EXISTS(SELECT 1 FROM notice_expirations e WHERE e.notice_id=n.id AND e.expires_at<=?)
         AND (n.apt IS NULL OR n.apt=?) AND EXISTS(
         SELECT 1 FROM email_memberships m WHERE m.email=? AND m.apt=? AND m.active=1
-        AND (n.audience='all' OR n.audience=m.role))""",(ident,version,apt,address,apt)).fetchone()
+        AND (n.audience='all' OR n.audience=m.role))""",(ident,version,int(time.time()),apt,address,apt)).fetchone()
     if not row:return False
     stamp=int(time.time())
     c.execute("""INSERT INTO notice_reads(notice_id,version,email,apt,first_seen,last_seen)
