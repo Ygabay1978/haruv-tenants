@@ -169,7 +169,7 @@ def preview_roles(payload):
     return ['committee','owner']+(['tenant'] if has_tenants else [])
 
 def resident_notices(c,address,apt):
-    return [dict(r,attachments=attachments.list_for(c,r['id'])) for r in c.execute("SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+    return [dict(r,**portal_rules.notice_expiry_fields(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -360,7 +360,7 @@ def app(env, start):
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
-                notices=[dict(n,attachments=attachments.list_for(c,n['id'])) for n in c.execute("SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
+                notices=[dict(n,**portal_rules.notice_expiry_fields(c,n['id']),attachments=attachments.list_for(c,n['id'])) for n in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':receipts.add_to(c,apt,[role],portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role]))),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
@@ -428,7 +428,7 @@ def app(env, start):
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/admin/notices' and method=='GET':
-                return respond({'notices':[dict(r,email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(r['id'],r['version'])).fetchone() is not None,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
+                return respond({'notices':[dict(r,**portal_rules.notice_expiry_fields(c,r['id']),email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(r['id'],r['version'])).fetchone() is not None,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
             if path=='/api/admin/notifications/retry' and method=='POST':
                 ident=body.get('id');version=body.get('version')
                 if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
@@ -442,6 +442,8 @@ def app(env, start):
                 if delivery is not None:body={**body,'active':int(delivery=='portal')}
                 try:values=portal_rules.notice_input(body,c)
                 except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
+                try:expiry=portal_rules.notice_expiry(body.get('expires_on')) if 'expires_on' in body else None
+                except (ValueError,TypeError):return respond({'error':'תאריך תפוגה אינו תקין'},'400 Bad Request')
                 ident=body.get('id');stamp=int(time.time());changed=True;version=1
                 try:chosen=attachments.validate_selection(c,body['attachments'],ident) if 'attachments' in body else None
                 except (ValueError,TypeError):return respond({'error':'יש לבחור עד 5 קבצים תקינים להודעה זו'},'400 Bad Request')
@@ -456,8 +458,10 @@ def app(env, start):
                         if c.execute('SELECT 1 FROM notice_archives WHERE notice_id=?',(ident,)).fetchone():return respond({'error':'יש לשחזר את ההודעה לפני עריכה'},'409 Conflict')
                         old_email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(ident,requested)).fetchone() is not None
                         changed=old_email_only!=email_only or tuple(old[k] for k in ('apt','audience','kind','title','body','active'))!=tuple(values) or (chosen is not None and sorted(chosen)!=sorted(a['id'] for a in attachments.list_for(c,ident)))
-                        version=requested+int(changed)
+                        expiry_changed='expires_on' in body and portal_rules.notice_expiry_fields(c,ident)['expires_on']!=(expiry['expires_on'] if expiry else None)
+                        version=requested+int(changed or expiry_changed)
                         c.execute('UPDATE notices SET apt=?,audience=?,kind=?,title=?,body=?,active=?,updated=?,version=? WHERE id=?',(*values,stamp,version,ident))
+                        if 'expires_on' in body:portal_rules.save_notice_expiry(c,ident,expiry)
                         if chosen is not None:attachments.bind(c,ident,chosen)
                         if email_only:c.execute('INSERT INTO notice_email_only VALUES(?,?) ON CONFLICT(notice_id,version) DO NOTHING',(ident,version))
                         if changed and (values[-1] or email_only):notice_mail.queue(c,ident,version)
@@ -465,6 +469,7 @@ def app(env, start):
                     ident=secrets.token_hex(16)
                     with c.transaction(lock='notice:'+ident):
                         c.execute('INSERT INTO notices VALUES(?,?,?,?,?,?,?,?,1)',(ident,*values,stamp))
+                        if 'expires_on' in body:portal_rules.save_notice_expiry(c,ident,expiry)
                         if chosen is not None:attachments.bind(c,ident,chosen)
                         if email_only:c.execute('INSERT INTO notice_email_only VALUES(?,?) ON CONFLICT(notice_id,version) DO NOTHING',(ident,version))
                         if values[-1] or email_only:notice_mail.queue(c,ident,version)
