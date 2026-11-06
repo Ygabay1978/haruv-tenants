@@ -95,3 +95,22 @@ def notice_input(body,c):
     active=body.get('active',1)
     if active not in (0,1) or isinstance(active,str):raise ValueError()
     return apt,audience,kind,title,text,int(active)
+
+
+def notice_expiry(value, now=None):
+    """An optional ISO date expires at the START of that day in Israel."""
+    if value in (None,''):return None
+    if not isinstance(value,str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',value):raise ValueError()
+    end=datetime.strptime(value,'%Y-%m-%d').replace(tzinfo=ZoneInfo('Asia/Jerusalem'))
+    if end.year<2026 or end.year>2100:raise ValueError()
+    return {'expires_on':value,'expires_at':int(end.timestamp())}
+
+def notice_expiry_fields(c,ident):
+    row=c.execute('SELECT expires_on,expires_at FROM notice_expirations WHERE notice_id=?',(ident,)).fetchone()
+    if not row:return {'expires_on':None,'expires_at':None,'expired':False}
+    import time
+    return dict(row,expired=row['expires_at']<=int(time.time()))
+
+def save_notice_expiry(c,ident,expiry):
+    if expiry is None:c.execute('DELETE FROM notice_expirations WHERE notice_id=?',(ident,))
+    else:c.execute('INSERT INTO notice_expirations VALUES(?,?,?) ON CONFLICT(notice_id) DO UPDATE SET expires_on=excluded.expires_on,expires_at=excluded.expires_at',(ident,expiry['expires_on'],expiry['expires_at']))
