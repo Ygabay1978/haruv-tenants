@@ -47,6 +47,7 @@ def add_to(c,apt,roles,data,viewer_email=None):
             recipient=_notice_recipient(payload.get('snapshot'),payer)
             if recipient and recipient==_notice_recipient(data,payer) and roles==[recipient[1]] and viewer_email==recipient[0]:
                 file['issued']=row['issued']
+                file['notifyPayer']=True
         data['receiptFiles'].append(file)
     return data
 
