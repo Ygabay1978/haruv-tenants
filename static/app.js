@@ -80,6 +80,22 @@ function notices(items,box){
   const section=document.createElement('section');section.className='notices';text('h3','עדכונים מוועד הבית',section);
   for(const n of items){if(n.expires_at&&n.expires_at*1000<=Date.now())continue;const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';link.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card);if(n.expires_at){const expire=()=>{const remaining=n.expires_at*1000-Date.now();if(remaining<=0){card.remove();if(!section.querySelector('article'))section.remove()}else setTimeout(expire,Math.min(remaining,2147483647))};expire()}observeNotice(card,n,Number(box.dataset.apt))}box.appendChild(section);
 }
+// Receipt alerts use only the receipts already authorized for this apartment view.
+const receiptNoticeStart=Date.parse('2026-11-09T17:18:57Z')/1000;
+function receiptNotice(files,box){
+  let latest;
+  for(const file of files||[]){
+    if(!Number.isFinite(file.issued)||file.issued<receiptNoticeStart||!(/^[a-f0-9]{32}$/.test(file.id)))continue;
+    if(!latest||file.issued>latest.issued||(file.issued===latest.issued&&file.number>latest.number))latest=file;
+  }
+  if(!latest)return;
+  const section=document.createElement('section');section.className='notices';
+  const card=document.createElement('article');card.className='notice';
+  text('h3',latest.kind==='dues'?'קבלה על תשלום ועד הבית מחכה לך בפורטל.':'קבלה על תשלום מחכה לך בפורטל.',card);
+  text('p','אפשר לצפות בה ולהוריד אותה באזור הקבלות בכרטיס הדירה.',card);
+  const link=text('a','לפתיחת הקבלה',card);link.href='/api/receipts/'+latest.id;link.target='_blank';link.rel='noopener';
+  section.appendChild(card);box.appendChild(section);
+}
 function collectionWarning(data,box){
   const c=data.collection;if(!c||!c.level)return;
   const warning=document.createElement('div');warning.className='collection-alert '+c.level;warning.setAttribute('role','status');
@@ -220,6 +236,7 @@ async function load(){
     const top=document.createElement('div');top.className='apartment-top';
     text('h2','דירה '+a.apt,top);
     const role=text('span',a.roles.map(r=>({owner:'בעל/ת דירה',tenant:'שוכר/ת',committee:'ועד הבית — צפייה בדירה'}[r]||r)).join(' · '),top);role.className='role-tag';box.appendChild(top);
+    receiptNotice(a.data.receiptFiles,box);
     notices(a.notices,box);
     collectionWarning(a.data,box);
     unitDetails(a.data,box);
