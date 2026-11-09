@@ -15,8 +15,39 @@ def metadata(row):
 def list_for(c,apt,roles):
     return [metadata(r) for r in c.execute('SELECT id,number,kind,payload,issued FROM receipts WHERE apt=? ORDER BY issued,number',(apt,)).fetchall() if permitted(r['kind'],apt,roles)]
 
-def add_to(c,apt,roles,data):
-    data['receiptFiles']=list_for(c,apt,roles)
+def _notice_recipient(snapshot,payer):
+    """Resolve a named payer to one unshared resident account, or fail closed."""
+    if not isinstance(snapshot,dict):return None
+    normalize=lambda value:' '.join(str(value or '').split()).casefold()
+    payer=normalize(payer)
+    if not payer:return None
+    contacts=set()
+    for role,key in (('owner','ownerContacts'),('tenant','tenantContacts')):
+        for contact in snapshot.get(key) or []:
+            if isinstance(contact,dict):
+                contacts.add((normalize(contact.get('name')),str(contact.get('email') or '').strip().lower(),role))
+    matches=[entry for entry in contacts if entry[0]==payer]
+    if len(matches)!=1 or not matches[0][1]:return None
+    _,address,role=matches[0]
+    if sum(entry[1]==address for entry in contacts)!=1:return None
+    return address,role
+
+def add_to(c,apt,roles,data,viewer_email=None):
+    rows=c.execute('SELECT id,number,kind,payload,issued FROM receipts WHERE apt=? ORDER BY issued,number',(apt,)).fetchall()
+    data['receiptFiles']=[]
+    latest=rows[-1] if rows else None
+    for row in rows:
+        if not permitted(row['kind'],apt,roles):continue
+        file=metadata(row)
+        # The resident UI uses the issuance timestamp to select an alert.
+        # Strip it from all other records; PDF access stays as before.
+        file.pop('issued')
+        if row is latest and viewer_email:
+            payload=json.loads(row['payload']);payer=payload.get('payer')
+            recipient=_notice_recipient(payload.get('snapshot'),payer)
+            if recipient and recipient==_notice_recipient(data,payer) and roles==[recipient[1]] and viewer_email==recipient[0]:
+                file['issued']=row['issued']
+        data['receiptFiles'].append(file)
     return data
 
 def issue(c,body,issuer):
