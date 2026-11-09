@@ -85,7 +85,7 @@ const receiptNoticeStart=Date.parse('2026-11-09T17:18:57Z')/1000;
 function receiptNotice(files,box){
   let latest;
   for(const file of files||[]){
-    if(!Number.isFinite(file.issued)||file.issued<receiptNoticeStart||!(/^[a-f0-9]{32}$/.test(file.id)))continue;
+    if(file.notifyPayer!==true||!Number.isFinite(file.issued)||file.issued<receiptNoticeStart||!(/^[a-f0-9]{32}$/.test(file.id)))continue;
     if(!latest||file.issued>latest.issued||(file.issued===latest.issued&&file.number>latest.number))latest=file;
   }
   if(!latest)return;
