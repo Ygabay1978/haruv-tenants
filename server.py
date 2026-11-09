@@ -478,7 +478,7 @@ def app(env, start):
             return respond({'error':'לא נמצא'},'404 Not Found')
         if path == '/api/apartments' and method=='GET':
             rows = c.execute('SELECT a.apt,a.payload,group_concat(m.role) AS roles FROM apartments a JOIN email_memberships m ON a.apt=m.apt WHERE m.email=? AND m.active=1 GROUP BY a.apt ORDER BY a.apt',(p,)).fetchall()
-            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':receipts.add_to(c,r['apt'],r['roles'].split(','),portal_rules.add_ev_benchmark(c,r['apt'],portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(',')))),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
+            return respond({'canPreview':can_preview(c,p),'apartments':[{'apt':r['apt'],'roles':r['roles'].split(','),'data':receipts.add_to(c,r['apt'],r['roles'].split(','),portal_rules.add_ev_benchmark(c,r['apt'],portal_rules.resident_payload(r['payload'],r['apt'],r['roles'].split(','))),viewer_email=p),'notices':resident_notices(c,p,r['apt'])} for r in rows]})
         if path == '/api/regulations' and method=='GET':
             row = c.execute('SELECT content FROM regulations WHERE id=1').fetchone()
             return respond({'blocks':json.loads(row['content']) if row else []})
