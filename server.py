@@ -3,7 +3,7 @@ import os, json, sqlite3, secrets, hashlib, time, re, hmac, logging, base64
 from http.cookies import SimpleCookie
 from html import escape
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode, quote, parse_qs
 from urllib.error import HTTPError, URLError
 from pathlib import Path
 
@@ -12,7 +12,7 @@ DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
-import notice_reads
+import notice_reads, notice_format
 import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services, receipts
 
 def connect():
@@ -131,8 +131,9 @@ def send_notice_emails(notice,addresses,key):
     text=f'הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־{title}.\n\nלצפייה בהודעה, היכנסו לפורטל: {link}\nהכניסה באמצעות קוד אישי למייל הרשום במערכת.\n\nועד בניין חרוב · שתולים 57 תל אביב'
     content=f'<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;background:#f6f1e9;color:#38281f;padding:28px"><h2>בניין חרוב</h2><p>הודעה חדשה מחכה לך מוועד הבניין בנוגע ל־<strong>{html.escape(title)}</strong>.</p><p><a href="{html.escape(link,quote=True)}" style="display:inline-block;background:#866141;color:white;padding:14px 24px;text-decoration:none;border-radius:5px">כניסה לפורטל וצפייה בהודעה</a></p><p>הכניסה באמצעות קוד אישי למייל הרשום במערכת.</p><small>שתולים 57 תל אביב · ועד הבית</small></body></html>'
     if notice.get('email_only'):
+        notice=notice_format.public(notice)
         text=notice['body']+'\n\nלכניסה לפורטל הדיירים: '+link+'\n\nועד בניין חרוב · שתולים 57 תל אביב'
-        content='<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;color:#38281f;padding:24px"><h2>'+html.escape(title)+'</h2><div style="white-space:pre-wrap">'+html.escape(notice['body'])+'</div><p><a href="'+html.escape(link,quote=True)+'">כניסה לפורטל הדיירים</a></p><small>ועד בניין חרוב · שתולים 57 תל אביב</small></body></html>'
+        content='<html lang="he" dir="rtl"><body style="font-family:Arial,sans-serif;color:#38281f;padding:24px"><h2>'+html.escape(title)+'</h2><div style="white-space:pre-wrap">'+(notice.get('body_html') or html.escape(notice['body']))+'</div><p><a href="'+html.escape(link,quote=True)+'">כניסה לפורטל הדיירים</a></p><small>ועד בניין חרוב · שתולים 57 תל אביב</small></body></html>'
     inner=re.search(r'<body[^>]*>(.*?)</body>',content,re.S).group(1)
     inner=re.sub(r'^<h2>.*?</h2>','',inner,count=1,flags=re.S)
     inner=inner.replace('<div style="white-space:pre-wrap">','<div dir="rtl" style="white-space:pre-wrap;direction:rtl;text-align:right">')
@@ -169,7 +170,7 @@ def preview_roles(payload):
     return ['committee','owner']+(['tenant'] if has_tenants else [])
 
 def resident_notices(c,address,apt):
-    return [dict(r,**portal_rules.notice_expiry_fields(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+    return [dict(notice_format.public(r),**portal_rules.notice_expiry_fields(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -181,6 +182,9 @@ def app(env, start):
     path, method = env.get('PATH_INFO','/'), env.get('REQUEST_METHOD','GET')
     if method=='OPTIONS' and path.startswith('/api/'):
         return respond({}) if env.get('HTTP_ORIGIN')==DASHBOARD_ORIGIN else respond({'error':'מקור לא מורשה'},'403 Forbidden')
+    if method=='GET' and path in ('/notice-editor.js','/notice-rich.css'):
+        mime='text/css' if path.endswith('.css') else 'application/javascript'
+        return respond((ROOT/'static'/path[1:]).read_text(),kind=mime+'; charset=utf-8')
     if method == 'GET' and path in ('/','/admin','/app.js','/admin.js','/style.css','/dashboard-connect','/dashboard-connect.js','/receipt-issue','/receipts.js'):
         name = {'/receipt-issue':'receipts.html','/receipts.js':'receipts.js','/':'index.html','/admin':'admin.html','/app.js':'app.js','/admin.js':'admin.js','/style.css':'style.css','/dashboard-connect':'dashboard-connect.html','/dashboard-connect.js':'dashboard-connect.js'}[path]
         kind = {'/receipt-issue':'text/html','/receipts.js':'application/javascript','/':'text/html','/admin':'text/html','/app.js':'application/javascript','/admin.js':'application/javascript','/style.css':'text/css','/dashboard-connect':'text/html','/dashboard-connect.js':'application/javascript'}[path]
@@ -227,7 +231,7 @@ def app(env, start):
         return respond({'error':'בקשה לא מורשית'},'403 Forbidden')
     try:
         n = int(env.get('CONTENT_LENGTH') or 0)
-        if n < 0 or n > (7500000 if path=='/api/admin/attachments/upload' else 250000 if path=='/api/admin/directory/import' else 20000): raise ValueError()
+        if n < 0 or n > (7500000 if path=='/api/admin/attachments/upload' else 250000 if path=='/api/admin/directory/import' else 100000 if path=='/api/admin/notices' else 20000): raise ValueError()
         body = json.loads(env['wsgi.input'].read(n) or b'{}') if method=='POST' else {}
         if not isinstance(body,dict): raise ValueError()
     except (ValueError,TypeError): return respond({'error':'בקשה לא תקינה'},'400 Bad Request')
@@ -338,7 +342,8 @@ def app(env, start):
         if (path.startswith('/api/attachments/') or path.startswith('/api/admin/attachments/')) and method=='GET':
             if path.startswith('/api/admin/') and not is_admin(c,p):return respond({'error':'גישה לוועד בלבד'},'403 Forbidden')
             download=path.endswith('/download')
-            value=path.rsplit('/',2)[-2] if download else path.rsplit('/',1)[-1]
+            viewing=path.endswith('/view')
+            value=path.rsplit('/',2)[-2] if download or viewing else path.rsplit('/',1)[-1]
             if not re.fullmatch(r'[0-9a-f]{32}',value):return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
             file=c.execute('SELECT * FROM notice_attachments WHERE id=?',(value,)).fetchone()
             permitted=bool(file and can_preview(c,p))
@@ -346,9 +351,15 @@ def app(env, start):
                 own=c.execute('SELECT DISTINCT apt FROM email_memberships WHERE email=? AND active=1',(p,)).fetchall()
                 permitted=any(any(n['id']==file['notice_id'] for n in resident_notices(c,p,a['apt'])) for a in own)
             if not permitted:return respond({'error':'הקובץ לא נמצא'},'404 Not Found')
+            raw=base64.b64decode(file['data'])
+            if viewing:
+                query=env.get('QUERY_STRING','')
+                requested=parse_qs(query[:120]).get('page',['1'])[0]
+                page=int(requested) if re.fullmatch(r'[0-9]{1,5}',requested) else 1
+                return respond(attachments.preview_html(raw,file['filename'],file['mime'],path[:-5],page),kind='text/html; charset=utf-8')
             if download:telemetry.record(c,p,'download','attachments',digest=digest,env=env)
             disposition='inline' if not download and (file['mime'].startswith('image/') or file['mime']=='application/pdf') else 'attachment'
-            return respond(base64.b64decode(file['data']),kind=file['mime'],extra=[('Content-Disposition',disposition+"; filename*=UTF-8''"+quote(file['filename'])),('Content-Security-Policy',"default-src 'none'; sandbox")])
+            return respond(raw,kind=file['mime'],extra=[('Content-Disposition',disposition+"; filename*=UTF-8''"+quote(file['filename'])),('Content-Security-Policy',"default-src 'none'; sandbox")])
         if path in ('/api/viewer/context','/api/preview'):
             if not can_preview(c,p):return respond({'error':'צפייה זו זמינה לוועד בלבד'},'403 Forbidden')
             if path=='/api/viewer/context' and method=='GET':
@@ -360,7 +371,7 @@ def app(env, start):
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
-                notices=[dict(n,**portal_rules.notice_expiry_fields(c,n['id']),attachments=attachments.list_for(c,n['id'])) for n in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
+                notices=[dict(notice_format.public(n),**portal_rules.notice_expiry_fields(c,n['id']),attachments=attachments.list_for(c,n['id'])) for n in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':receipts.add_to(c,apt,[role],portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role]))),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
@@ -423,12 +434,12 @@ def app(env, start):
                     else:c.execute('INSERT INTO notice_archives VALUES(?,?) ON CONFLICT(notice_id) DO NOTHING',(ident,int(time.time())))
                 return respond({'ok':True})
             if path=='/api/admin/notices/deleted' and method=='GET':
-                return respond({'notices':[dict(r,archived=True,attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n JOIN notice_archives a ON a.notice_id=n.id ORDER BY a.deleted DESC').fetchall()]})
+                return respond({'notices':[dict(notice_format.public(r),archived=True,attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n JOIN notice_archives a ON a.notice_id=n.id ORDER BY a.deleted DESC').fetchall()]})
             if path=='/api/admin/context' and method=='GET':
                 rows=c.execute('SELECT apt,payload FROM apartments ORDER BY apt').fetchall()
                 return respond({'apartments':[{'apt':r['apt'],'owners':json.loads(r['payload']).get('owners',[]),'tenants':json.loads(r['payload']).get('tenants',[])} for r in rows]})
             if path=='/api/admin/notices' and method=='GET':
-                return respond({'notices':[dict(r,**portal_rules.notice_expiry_fields(c,r['id']),email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(r['id'],r['version'])).fetchone() is not None,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
+                return respond({'notices':[dict(notice_format.public(r),**portal_rules.notice_expiry_fields(c,r['id']),email_only=c.execute('SELECT 1 FROM notice_email_only WHERE notice_id=? AND version=?',(r['id'],r['version'])).fetchone() is not None,notification=notice_mail.latest(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute('SELECT n.* FROM notices n WHERE NOT EXISTS (SELECT 1 FROM notice_archives a WHERE a.notice_id=n.id) ORDER BY n.updated DESC,n.id').fetchall()]})
             if path=='/api/admin/notifications/retry' and method=='POST':
                 ident=body.get('id');version=body.get('version')
                 if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident) or type(version) is not int or version<1:return respond({'error':'פרטי הודעה לא תקינים'},'400 Bad Request')
@@ -440,7 +451,10 @@ def app(env, start):
                 if delivery is not None and delivery not in ('portal','email','draft'):return respond({'error':'מצב שליחה לא תקין'},'400 Bad Request')
                 email_only=delivery=='email'
                 if delivery is not None:body={**body,'active':int(delivery=='portal')}
-                try:values=portal_rules.notice_input(body,c)
+                try:
+                    values=portal_rules.notice_input(body,c)
+                    if body.get('body_html'):
+                        values=(*values[:4],notice_format.pack(values[4],body['body_html']),values[5])
                 except (ValueError,TypeError):return respond({'error':'יש להשלים כותרת, תוכן וקהל יעד תקינים'},'400 Bad Request')
                 try:expiry=portal_rules.notice_expiry(body.get('expires_on')) if 'expires_on' in body else None
                 except (ValueError,TypeError):return respond({'error':'תאריך תפוגה אינו תקין'},'400 Bad Request')

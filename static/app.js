@@ -78,7 +78,16 @@ function observeNotice(card,n,apt){
 function notices(items,box){
   if(!items||!items.length)return;
   const section=document.createElement('section');section.className='notices';text('h3','עדכונים מוועד הבית',section);
-  for(const n of items){if(n.expires_at&&n.expires_at*1000<=Date.now())continue;const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);text('p',n.body,card);for(const attachment of n.attachments||[]){const files=document.createElement('div');files.className='notice-attachment-row';card.appendChild(files);const link=text('a',attachment.filename,files);link.href='/api/attachments/'+attachment.id;link.target='_blank';link.rel='noopener';link.className='notice-attachment';link.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=link.href;img.alt=attachment.filename;img.loading='lazy';link.prepend(img)}const download=text('a','הורדה ↓',files);download.href=link.href+'/download';download.download=attachment.filename;download.className='notice-download';download.setAttribute('aria-label','הורדת '+attachment.filename)}section.appendChild(card);if(n.expires_at){const expire=()=>{const remaining=n.expires_at*1000-Date.now();if(remaining<=0){card.remove();if(!section.querySelector('article'))section.remove()}else setTimeout(expire,Math.min(remaining,2147483647))};expire()}observeNotice(card,n,Number(box.dataset.apt))}box.appendChild(section);
+  for(const n of items){if(n.expires_at&&n.expires_at*1000<=Date.now())continue;const card=document.createElement('article');card.className='notice';text('small',n.kind==='note'?'הערה לדירה':'הודעה',card);text('h4',n.title,card);window.HaruvNoticeEditor.show(card,n);for(const attachment of n.attachments||[]){
+    const files=text('div','',card);files.className='haruv-file-row';
+    const name=text('div','',files);name.className='haruv-file-name';
+    const base='/api/attachments/'+encodeURIComponent(attachment.id);
+    if(attachment.mime.startsWith('image/')){const img=document.createElement('img');img.src=base;img.alt='';img.loading='lazy';name.append(img)}
+    text('bdi',attachment.filename,name);
+    const actions=text('div','',files);actions.className='haruv-file-actions';
+    const view=text('a','צפייה בקובץ',actions);view.href=base+'/view';view.target='_blank';view.rel='noopener';view.onclick=()=>trackUsage('attachments',Number(box.dataset.apt));view.setAttribute('aria-label','צפייה בקובץ '+attachment.filename);
+    const download=text('a','הורדת הקובץ',actions);download.href=base+'/download';download.download=attachment.filename;download.setAttribute('aria-label','הורדת '+attachment.filename);
+  }section.appendChild(card);if(n.expires_at){const expire=()=>{const remaining=n.expires_at*1000-Date.now();if(remaining<=0){card.remove();if(!section.querySelector('article'))section.remove()}else setTimeout(expire,Math.min(remaining,2147483647))};expire()}observeNotice(card,n,Number(box.dataset.apt))}box.appendChild(section);
 }
 // Receipt alerts use only the receipts already authorized for this apartment view.
 const receiptNoticeStart=Date.parse('2026-11-09T17:18:57Z')/1000;
