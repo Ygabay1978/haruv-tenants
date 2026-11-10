@@ -1,0 +1,13 @@
+.haruv-rich-editor{border:1px solid #cbb99e;border-radius:10px;background:#fffcf7;margin:6px 0 14px;min-width:0}
+.haruv-editor-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;background:#efe5d4;border-bottom:1px solid #cbb99e;border-radius:10px 10px 0 0}
+.haruv-editor-toolbar button,.haruv-editor-toolbar select,.haruv-editor-toolbar label{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:44px;margin:0;padding:5px 9px;gap:5px;border:1px solid #cbb99e;border-radius:6px;background:#fffdf8;color:#38291e;font:inherit;font-size:13px;line-height:1.2}
+.haruv-editor-toolbar button:hover{background:#e6d6be}.haruv-editor-toolbar input[type=color]{width:26px;min-height:26px;height:26px;padding:0;margin:0;border:0;cursor:pointer}
+.haruv-editor-toolbar .is-bold{font-weight:800}.haruv-editor-toolbar .is-italic{font-style:italic}.haruv-editor-toolbar .is-underlined{text-decoration:underline}.haruv-editor-toolbar .is-struck{text-decoration:line-through}
+.haruv-editor-input,.notice-rich-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;text-align:right}
+.haruv-editor-input{min-height:170px;padding:12px;color:#38291e;font:inherit;line-height:1.7}
+.haruv-editor-input p,.notice-rich-body p{margin:.35em 0;font-size:inherit;color:inherit}.notice-rich-body ul,.notice-rich-body ol,.haruv-editor-input ul,.haruv-editor-input ol{padding-inline-start:1.6em;margin:.45em 0}
+.haruv-editor-toolbar :focus-visible,.haruv-editor-input:focus-visible,.haruv-file-actions a:focus-visible{outline:2px solid #26724d;outline-offset:2px}
+.haruv-file-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:12px;padding:10px;background:#f2e9db;border:1px solid #d8c5a8;border-radius:9px}
+.haruv-file-name{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere;font-size:14px;font-weight:650;color:#38291e}.haruv-file-name img{width:48px;height:40px;object-fit:cover;border-radius:5px}
+.haruv-file-actions{display:flex;gap:8px;flex-wrap:wrap}.haruv-file-actions a{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:44px;padding:8px 14px;border:1px solid #715135;border-radius:7px;background:#60452f;color:white;font-size:14px;font-weight:750;text-decoration:none}.haruv-file-actions a+ a{background:#e4d5bf;color:#38291e}.haruv-file-actions a:hover{filter:brightness(.92)}
+@media(max-width:520px){.haruv-file-actions{width:100%}.haruv-file-actions a{flex:1}.haruv-editor-toolbar{padding:6px}.haruv-editor-toolbar label{font-size:12px}.haruv-editor-input{font-size:16px}}
