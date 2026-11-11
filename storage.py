@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS notice_notifications(notice_id TEXT NOT NULL,version 
 CREATE TABLE IF NOT EXISTS resident_viewers(email TEXT PRIMARY KEY,active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS administrators(email TEXT PRIMARY KEY,active INTEGER NOT NULL DEFAULT 1);
 
-CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,apt INTEGER,audience TEXT NOT NULL CHECK(audience IN ('all','owner','tenant')),kind TEXT NOT NULL CHECK(kind IN ('note','message')),title TEXT NOT NULL,body TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,updated BIGINT NOT NULL,version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,apt INTEGER,audience TEXT NOT NULL CHECK(audience IN ('all','owner','tenant','residents')),kind TEXT NOT NULL CHECK(kind IN ('note','message')),title TEXT NOT NULL,body TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,updated BIGINT NOT NULL,version INTEGER NOT NULL DEFAULT 1);
 
 CREATE TABLE IF NOT EXISTS presentation(id INTEGER PRIMARY KEY CHECK(id=1), photo TEXT NOT NULL);
 
@@ -99,6 +99,24 @@ class Database:
         return self._transaction.__exit__(*args)
 
 
+def migrate_notice_audience(db):
+    if db.postgres:
+        row=db.connection.execute("""SELECT pg_get_constraintdef(oid) AS definition
+            FROM pg_constraint WHERE conrelid='portal.notices'::regclass AND conname='notices_audience_check'""").fetchone()
+        if row and "'residents'" not in row['definition']:
+            db.connection.execute("ALTER TABLE portal.notices DROP CONSTRAINT notices_audience_check, ADD CONSTRAINT notices_audience_check CHECK (audience IN ('all','owner','tenant','residents'))")
+    else:
+        c=db.connection
+        row=c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='notices'").fetchone()
+        if row and "'residents'" not in row['sql']:
+            with db.transaction():
+                row=c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='notices'").fetchone()
+                if "'residents'" in row['sql']:return
+                c.execute('ALTER TABLE notices RENAME TO notices_legacy')
+                c.execute(next(s for s in SCHEMA.split(';') if 'CREATE TABLE IF NOT EXISTS notices(' in s))
+                c.execute('INSERT INTO notices SELECT * FROM notices_legacy')
+                c.execute('DROP TABLE notices_legacy')
+
 def connect(local_path):
     url = os.environ.get('DATABASE_URL', '').strip()
     if url:
@@ -120,6 +138,7 @@ def connect(local_path):
                         db.connection.execute('CREATE SCHEMA IF NOT EXISTS portal')
                         for statement in SCHEMA.split(';'):
                             if statement.strip(): db.execute(statement)
+                        migrate_notice_audience(db)
                     _ready_urls.add(url)
             return db
         except BaseException:
@@ -130,4 +149,6 @@ def connect(local_path):
     c = sqlite3.connect(local_path, timeout=15)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
-    return Database(c)
+    db=Database(c)
+    migrate_notice_audience(db)
+    return db
