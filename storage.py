@@ -2,7 +2,7 @@
 import os, re, sqlite3, threading
 from contextlib import contextmanager
 
-TABLES = ('notice_expirations','receipt_revisions','receipts','receipt_sequences','apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads', 'notice_email_only')
+TABLES = ('notice_expirations','receipt_revisions','receipts','receipt_sequences','apartments', 'memberships', 'sessions', 'attempts', 'summary', 'email_memberships', 'email_sessions', 'email_challenges', 'presentation', 'notices', 'administrators', 'resident_viewers', 'notice_notifications', 'committee_account', 'dashboard_sessions', 'notice_archives', 'notice_attachments', 'usage_events', 'monitoring_state', 'service_providers', 'regulations', 'notice_reads', 'notice_email_only', 'notice_portal_only')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS notice_expirations(notice_id TEXT PRIMARY KEY,expires_on TEXT NOT NULL,expires_at BIGINT NOT NULL);
 CREATE INDEX IF NOT EXISTS notice_expiry_time ON notice_expirations(expires_at);
@@ -12,6 +12,7 @@ CREATE INDEX IF NOT EXISTS receipt_revision_source ON receipt_revisions(old_sour
 CREATE TABLE IF NOT EXISTS receipt_sequences(year INTEGER PRIMARY KEY,last_number INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY,number TEXT NOT NULL UNIQUE,apt INTEGER NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('dues','ev')),source_key TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,pdf TEXT NOT NULL,sha256 TEXT NOT NULL,issued BIGINT NOT NULL);
 
+CREATE TABLE IF NOT EXISTS notice_portal_only(notice_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(notice_id,version));
 CREATE TABLE IF NOT EXISTS notice_email_only(notice_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(notice_id,version));
 CREATE TABLE IF NOT EXISTS notice_reads(notice_id TEXT NOT NULL,version INTEGER NOT NULL,email TEXT NOT NULL,apt INTEGER NOT NULL,first_seen BIGINT NOT NULL,last_seen BIGINT NOT NULL,PRIMARY KEY(notice_id,version,email,apt));
 CREATE TABLE IF NOT EXISTS regulations(id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL);
