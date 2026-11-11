@@ -1,15 +1,20 @@
 """Durable notification attempts with exact apartment/role recipient scoping."""
 import time,uuid
+from portal_rules import notice_audience_matches, resident_owner
 
 class Rejected(Exception): pass
 class Uncertain(Exception): pass
 
 def recipients(c,notice):
-    query='SELECT DISTINCT email FROM email_memberships WHERE active=1'
+    query="""SELECT m.email,m.role,a.payload, EXISTS(SELECT 1 FROM email_memberships t
+        WHERE t.apt=m.apt AND t.role='tenant' AND t.active=1) AS has_tenant
+        FROM email_memberships m LEFT JOIN apartments a ON a.apt=m.apt WHERE m.active=1"""
     args=[]
-    if notice['apt'] is not None:query+=' AND apt=?';args.append(notice['apt'])
-    if notice['audience']!='all':query+=' AND role=?';args.append(notice['audience'])
-    return sorted({r['email'].strip().lower() for r in c.execute(query,args).fetchall()})
+    if notice['apt'] is not None:query+=' AND m.apt=?';args.append(notice['apt'])
+    audience=notice['audience']
+    return sorted({r['email'].strip().lower() for r in c.execute(query,args).fetchall()
+        if notice_audience_matches(audience,r['role'],audience=='residents' and r['role']=='owner'
+            and resident_owner(r['payload'],r['has_tenant']))})
 
 def queue(c,ident,version):
     c.execute("INSERT INTO notice_notifications(notice_id,version,state,recipients,updated) VALUES(?,?,'pending',0,?) ON CONFLICT(notice_id,version) DO NOTHING",(ident,version,int(time.time())))
