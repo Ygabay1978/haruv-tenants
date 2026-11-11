@@ -11,3 +11,7 @@
 .haruv-file-name{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere;font-size:14px;font-weight:650;color:#38291e}.haruv-file-name img{width:48px;height:40px;object-fit:cover;border-radius:5px}
 .haruv-file-actions{display:flex;gap:8px;flex-wrap:wrap}.haruv-file-actions a{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:44px;padding:8px 14px;border:1px solid #715135;border-radius:7px;background:#60452f;color:white;font-size:14px;font-weight:750;text-decoration:none}.haruv-file-actions a+ a{background:#e4d5bf;color:#38291e}.haruv-file-actions a:hover{filter:brightness(.92)}
 @media(max-width:520px){.haruv-file-actions{width:100%}.haruv-file-actions a{flex:1}.haruv-editor-toolbar{padding:6px}.haruv-editor-toolbar label{font-size:12px}.haruv-editor-input{font-size:16px}}
+
+/* A red notice background selected in the editor highlights the whole card. */
+.notice:has(>.notice-rich-body>div[style*="background-color:#b32020"]){background:#b32020;color:#fff;border-color:#8f1717}
+.notice:has(>.notice-rich-body>div[style*="background-color:#b32020"])> :is(small,h3,h4){color:#fff}
