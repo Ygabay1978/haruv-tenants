@@ -82,9 +82,32 @@ def add_ev_benchmark(c, apt, data):
         }}
     return data
 
+def has_recorded_tenants(data):
+    def named(value):
+        return isinstance(value,str) and value.strip() not in ('','-','אין')
+    return any(named(n) for n in data.get('tenants') or []) or any(
+        isinstance(contact,dict) and named(contact.get('name'))
+        for contact in data.get('tenantContacts') or [])
+
+def resident_owner(raw, has_tenant_account):
+    if raw is None or has_tenant_account:
+        return False
+    data=json.loads(raw) if isinstance(raw,str) else raw
+    return isinstance(data,dict) and isinstance(data.get('tenants'),list) and isinstance(data.get('tenantContacts'),list) and not has_recorded_tenants(data)
+
+def apartment_has_resident_owner(c,apt):
+    row=c.execute("""SELECT a.payload, EXISTS(SELECT 1 FROM email_memberships m
+        WHERE m.apt=a.apt AND m.role='tenant' AND m.active=1) AS has_tenant
+        FROM apartments a WHERE a.apt=?""",(apt,)).fetchone()
+    return bool(row and resident_owner(row['payload'],row['has_tenant']))
+
+def notice_audience_matches(audience,role,owner_lives_here=False):
+    return audience=='all' or audience==role or (
+        audience=='residents' and (role=='tenant' or (role=='owner' and owner_lives_here)))
+
 def notice_input(body,c):
     kind=body.get('kind','message');audience=body.get('audience','all');apt=body.get('apt')
-    if kind not in ('note','message') or audience not in ('all','owner','tenant'):raise ValueError()
+    if kind not in ('note','message') or audience not in ('all','owner','tenant','residents'):raise ValueError()
     if apt in ('',None):apt=None
     else:
         if isinstance(apt,bool) or not str(apt).isdigit():raise ValueError()
