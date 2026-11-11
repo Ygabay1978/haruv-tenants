@@ -164,13 +164,24 @@ def can_preview(c,address):
 
 def preview_roles(payload):
     data=json.loads(payload) if isinstance(payload,str) else payload
-    names=data.get('tenants',[])
-    contacts=data.get('tenantContacts',[])
-    has_tenants=(isinstance(names,list) and any(isinstance(name,str) and name.strip() not in ('','-','אין') for name in names)) or (isinstance(contacts,list) and any(isinstance(contact,dict) and isinstance(contact.get('name'),str) and contact['name'].strip() not in ('','-','אין') for contact in contacts))
-    return ['committee','owner']+(['tenant'] if has_tenants else [])
+    return ['committee','owner']+(['tenant'] if portal_rules.has_recorded_tenants(data) else [])
+
+def visible_notices(c,apt,roles):
+    candidates=c.execute("""SELECT id,kind,title,body,updated,version,audience FROM notices
+        WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e
+        WHERE e.notice_id=notices.id AND e.expires_at<=?)
+        AND (apt IS NULL OR apt=?) ORDER BY updated DESC,id""",(int(time.time()),apt)).fetchall()
+    owner_lives_here='owner' in roles and 'tenant' not in roles and any(
+        n['audience']=='residents' for n in candidates) and portal_rules.apartment_has_resident_owner(c,apt)
+    return [dict(notice_format.public({k:n[k] for k in ('id','kind','title','body','updated','version')}),
+        **portal_rules.notice_expiry_fields(c,n['id']),attachments=attachments.list_for(c,n['id']))
+        for n in candidates if 'committee' in roles or any(
+            portal_rules.notice_audience_matches(n['audience'],role,owner_lives_here) for role in roles)]
 
 def resident_notices(c,address,apt):
-    return [dict(notice_format.public(r),**portal_rules.notice_expiry_fields(c,r['id']),attachments=attachments.list_for(c,r['id'])) for r in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (audience='all' OR audience IN (SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1)) ORDER BY updated DESC,id",(apt,address,apt)).fetchall()]
+    roles=[m['role'] for m in c.execute(
+        'SELECT role FROM email_memberships WHERE email=? AND apt=? AND active=1',(address,apt)).fetchall()]
+    return visible_notices(c,apt,roles)
 
 def app(env, start):
     status, headers = '200 OK', []
@@ -371,7 +382,7 @@ def app(env, start):
                 row=c.execute('SELECT apt,payload FROM apartments WHERE apt=?',(apt,)).fetchone()
                 if not row:return respond({'error':'הדירה לא נמצאה'},'404 Not Found')
                 if role not in preview_roles(row['payload']):return respond({'error':'לא רשומים שוכרים בדירה זו. יש לבחור צפייה כבעל/ת דירה או כוועד'},'400 Bad Request')
-                notices=[dict(notice_format.public(n),**portal_rules.notice_expiry_fields(c,n['id']),attachments=attachments.list_for(c,n['id'])) for n in c.execute(f"SELECT id,kind,title,body,updated,version FROM notices WHERE active=1 AND NOT EXISTS (SELECT 1 FROM notice_expirations e WHERE e.notice_id=notices.id AND e.expires_at<={int(time.time())}) AND (apt IS NULL OR apt=?) AND (?='committee' OR audience='all' OR audience=?) ORDER BY updated DESC,id",(apt,role,role)).fetchall()]
+                notices=visible_notices(c,apt,[role])
                 return respond({'canPreview':True,'preview':{'apt':apt,'role':role},'apartments':[{'apt':apt,'roles':[role],'data':receipts.add_to(c,apt,[role],portal_rules.add_ev_benchmark(c,apt,portal_rules.resident_payload(row['payload'],apt,[role]))),'notices':notices}]})
             return respond({'error':'פעולה לא מורשית'},'405 Method Not Allowed')
         if path.startswith('/api/admin/'):
