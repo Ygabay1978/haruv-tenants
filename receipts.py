@@ -18,7 +18,7 @@ def list_for(c,apt,roles):
 def _notice_recipient(snapshot,payer):
     """Resolve a named payer to one unshared resident account, or fail closed."""
     if not isinstance(snapshot,dict):return None
-    normalize=lambda value:' '.join(str(value or '').split()).casefold()
+    normalize=lambda value:' '.join(sorted(str(value or '').casefold().split()))
     payer=normalize(payer)
     if not payer:return None
     contacts=set()
