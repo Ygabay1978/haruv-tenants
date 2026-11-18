@@ -12,6 +12,7 @@ DB = os.environ.get('PORTAL_DB', '/data/portal.sqlite3')
 ORIGIN = os.environ.get('PORTAL_ORIGIN', '')
 DASHBOARD_ORIGIN = 'https://haruv-building-private.spiffydog258.chatgpt.site'
 import storage
+import receipt_mail
 import notice_reads, notice_format
 import tenant_summary, portal_rules, notice_mail, attachments, telemetry, directory_update, services, receipts
 
@@ -390,11 +391,17 @@ def app(env, start):
             if path=='/api/admin/receipts/reference' and method=='POST':
                 try:return respond(receipts.amend_reference(c,body,p))
                 except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
+            if path=='/api/admin/receipts/notify' and method=='POST':
+                ident=body.get('id')
+                if not isinstance(ident,str) or not re.fullmatch(r'[0-9a-f]{32}',ident):return respond({'error':'פרטי קבלה לא תקינים'},'400 Bad Request')
+                if not limit(c,'receipt-notify:'+p,30,3600):return respond({'error':'נא להמתין לפני ניסיון נוסף'},'429 Too Many Requests')
+                try:return respond({'notification':receipt_mail.deliver(c,ident,send_notice_emails)})
+                except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
             if path=='/api/admin/receipts/issue' and method=='POST':
-                try:return respond(receipts.issue(c,body,p))
+                try:return respond(receipt_mail.issue(c,body,p,send_notice_emails))
                 except ValueError as error:return respond({'error':str(error)},'400 Bad Request')
             if path=='/api/admin/receipts' and method=='GET':
-                return respond({'receipts':[dict(receipts.metadata(r),apt=r['apt'],reference=json.loads(r['payload'])['reference']) for r in c.execute('SELECT id,number,apt,kind,payload,issued FROM receipts ORDER BY issued DESC,number DESC').fetchall()]})
+                return respond({'receipts':[dict(receipts.metadata(r),apt=r['apt'],reference=json.loads(r['payload'])['reference'],notification=receipt_mail.latest(c,r['id'])) for r in c.execute('SELECT id,number,apt,kind,payload,issued FROM receipts ORDER BY issued DESC,number DESC').fetchall()]})
             if path=='/api/admin/services' and method=='GET':
                 return respond({'providers':[dict(r) for r in c.execute('SELECT * FROM service_providers ORDER BY active DESC,category,name').fetchall()]})
             if path=='/api/admin/services' and method=='POST':
